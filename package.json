@@ -1,0 +1,117 @@
+{
+  "name": "openpane",
+  "displayName": "OpenPane",
+  "description": "Code-agent console for opencode inside VS Code",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "AI"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "openpane",
+          "title": "OpenPane",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "openpane": [
+        {
+          "type": "webview",
+          "id": "openpane.chat",
+          "name": "Agent"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "openpane.askAboutSelection",
+        "title": "Ask about selection",
+        "category": "OpenPane"
+      },
+      {
+        "command": "openpane.attachDiagnostics",
+        "title": "Attach diagnostics for current file",
+        "category": "OpenPane"
+      },
+      {
+        "command": "openpane.newSession",
+        "title": "New session",
+        "category": "OpenPane"
+      },
+      {
+        "command": "openpane.restartServer",
+        "title": "Restart server",
+        "category": "OpenPane"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "openpane.askAboutSelection",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "openpane.askAboutSelection",
+          "when": "editorHasSelection",
+          "group": "navigation@9"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "OpenPane",
+      "properties": {
+        "openpane.binaryPath": {
+          "type": "string",
+          "default": "opencode",
+          "description": "Path to the opencode binary. Used to spawn `opencode serve`."
+        },
+        "openpane.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Use an already running opencode server instead of spawning one, e.g. http://opencode:PASSWORD@127.0.0.1:4096"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build --config vite.config.extension.mts && vite build --config vite.config.mts",
+    "watch": "vite build --config vite.config.extension.mts --watch",
+    "lint": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.webview.json --noEmit",
+    "test": "vitest run",
+    "gen:api": "node scripts/gen-api.mjs",
+    "package": "npm run build && vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.18",
+    "marked": "^18.2.1",
+    "openapi-fetch": "^0.17.0",
+    "solid-js": "^1.9.19"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/vscode": "~1.100.0",
+    "@vscode/vsce": "^4.1.1",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.8",
+    "vite-plugin-solid": "^2.11.17",
+    "vitest": "^5.1.1"
+  }
+}

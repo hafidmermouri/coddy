@@ -1,0 +1,12 @@
+.vscode/**
+node_modules/**
+src/**
+test/**
+scripts/**
+spec/**
+*.ts
+tsconfig*.json
+**/*.map
+.gitignore
+PROGRESS.md
+prompt.md
