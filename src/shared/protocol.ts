@@ -37,8 +37,9 @@ export interface PermissionRequest {
 }
 
 export interface Usage {
-  /** Session totals: prompt tokens (incl. cache reads/writes) and generated tokens (incl. reasoning). */
+  /** Session totals. input = fresh prompt tokens (incl. cache writes); cached = cache reads, billed far lower. */
   input: number;
+  cached: number;
   output: number;
   cost: number;
   /** Tokens in the context window as of the last model step. */
@@ -127,5 +128,5 @@ export const emptySession = (): SessionView => ({
   messages: [],
   permissions: [],
   changedFiles: [],
-  usage: { input: 0, output: 0, cost: 0, context: 0 },
+  usage: { input: 0, cached: 0, output: 0, cost: 0, context: 0 },
 });

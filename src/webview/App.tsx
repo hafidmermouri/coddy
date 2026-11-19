@@ -160,8 +160,8 @@ function UsageBar(props: { usage: Usage }) {
   const pct = () => Math.min(100, (props.usage.context / CONTEXT_BUDGET) * 100);
   const level = () => (pct() >= 90 ? 'high' : pct() >= 70 ? 'mid' : 'low');
   return (
-    <div class="usage" title={`Session totals: ${props.usage.input} input tokens (incl. cache), ${props.usage.output} output tokens (incl. reasoning). Context: ${props.usage.context} tokens of the ${fmt(CONTEXT_BUDGET)} budget.`}>
-      <span>in {fmt(props.usage.input)}</span>
+    <div class="usage" title={`Session totals. In: ${props.usage.input} fresh input tokens, plus ${props.usage.cached} read from cache (billed at a much lower rate). Every agent step resends the system prompt, tool definitions and conversation, so input grows faster than your prompts. Out: ${props.usage.output} tokens (incl. reasoning). Context: ${props.usage.context} tokens of the ${fmt(CONTEXT_BUDGET)} budget.`}>
+      <span>in {fmt(props.usage.input)}<Show when={props.usage.cached}> (+{fmt(props.usage.cached)} cached)</Show></span>
       <span>out {fmt(props.usage.output)}</span>
       <span>${props.usage.cost.toFixed(4)}</span>
       <span class="spacer" />

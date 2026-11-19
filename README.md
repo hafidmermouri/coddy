@@ -26,7 +26,7 @@ It is for code work in the open workspace only:
 ```sh
 npm install
 npm run package          # builds dist/ and writes openpane-<version>.vsix
-code --install-extension openpane-0.2.0.vsix
+code --install-extension openpane-0.2.1.vsix
 ```
 
 Or in VS Code: Extensions view, `...` menu, "Install from VSIX...".

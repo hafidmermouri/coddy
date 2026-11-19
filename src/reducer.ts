@@ -85,7 +85,7 @@ export function reduce(state: SessionView, ev: ServerEvent): SessionView {
 export function fromHistory(id: string, title: string | undefined, history: HistoryMessage[]): SessionView {
   const messages: Message[] = [];
   const changed = new Set<string>();
-  const usage = { input: 0, output: 0, cost: 0, context: 0 };
+  const usage = { input: 0, cached: 0, output: 0, cost: 0, context: 0 };
   for (const m of history) {
     if (m.type === 'user') {
       const images = (m.files ?? []).filter((f) => f.mime.startsWith('image/')).map((f) => f.name ?? 'image');
@@ -96,6 +96,7 @@ export function fromHistory(id: string, title: string | undefined, history: Hist
     if (m.tokens) {
       const t = totals(m.tokens, m.cost ?? 0);
       usage.input += t.input;
+      usage.cached += t.cached;
       usage.output += t.output;
       usage.cost += t.cost;
       usage.context = contextTokens(m.tokens);
@@ -117,8 +118,8 @@ export function fromHistory(id: string, title: string | undefined, history: Hist
 
 type Tokens = S['TokenUsage.Info'];
 
-export function totals(t: Tokens, cost: number): { input: number; output: number; cost: number } {
-  return { input: t.input + t.cache.read + t.cache.write, output: t.output + t.reasoning, cost };
+export function totals(t: Tokens, cost: number): { input: number; cached: number; output: number; cost: number } {
+  return { input: t.input + t.cache.write, cached: t.cache.read, output: t.output + t.reasoning, cost };
 }
 
 /** What the next request carries: the last prompt plus what the model produced in reply. */
