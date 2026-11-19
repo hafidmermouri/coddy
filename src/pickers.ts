@@ -37,3 +37,13 @@ export async function pickSession(ctl: Controller): Promise<void> {
   if (pick.id) await ctl.resume(pick.id);
   else ctl.newSession();
 }
+
+export async function pickVariant(ctl: Controller): Promise<void> {
+  const model = await ctl.currentModel();
+  if (!model?.variants.length) return void vscode.window.showInformationMessage(`OpenPane: ${model?.name ?? 'this model'} has no effort levels.`);
+  const pick = await vscode.window.showQuickPick(
+    [{ label: 'default', id: undefined }, ...model.variants.map((v) => ({ label: v.id, id: v.id }))],
+    { placeHolder: `Effort for ${model.name} (current: ${ctl.state.variant ?? 'default'})` },
+  );
+  if (pick) await ctl.setVariant(pick.id);
+}

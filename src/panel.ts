@@ -53,17 +53,3 @@ export class SidebarView implements vscode.WebviewViewProvider, ChatWebview {
     await vscode.commands.executeCommand('openpane.chat.focus');
   }
 }
-
-/** A chat in an editor tab, with its own session. */
-export function openTab(extensionUri: vscode.Uri, onMessage: (m: FromWebview) => void): vscode.WebviewPanel {
-  const panel = vscode.window.createWebviewPanel('openpane.tab', 'OpenPane', vscode.ViewColumn.Beside, {
-    retainContextWhenHidden: true,
-  });
-  panel.iconPath = {
-    light: vscode.Uri.joinPath(extensionUri, 'media', 'icon-light.svg'),
-    dark: vscode.Uri.joinPath(extensionUri, 'media', 'icon.svg'),
-  };
-  const sub = setupWebview(panel.webview, extensionUri, onMessage);
-  panel.onDidDispose(() => sub.dispose());
-  return panel;
-}

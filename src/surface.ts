@@ -1,66 +1,122 @@
-// One chat surface (sidebar or editor tab): a Controller with its own session, plus the
-// routing of editor-side intents (diffs, files, pickers, context) for that surface.
+// The chat panel: a set of session tabs, each a Controller with its own session, plus the
+// routing of editor-side intents (diffs, files, pickers, context) to the active tab.
 import { isAbsolute, join } from 'node:path';
 import * as vscode from 'vscode';
 import { type ContextTracker, pickWorkspaceFile } from './context';
-import { Controller } from './controller';
+import { type ChatState, Controller, type Prefs } from './controller';
 import type { DiffViewer } from './diff';
 import type { ChatWebview } from './panel';
-import { pickAgent, pickModel, pickSession } from './pickers';
-import type { FromWebview, ViewState } from './shared/protocol';
+import { pickAgent, pickModel, pickSession, pickVariant } from './pickers';
+import type { Connection } from './server';
+import type { FromWebview, ServerStatus } from './shared/protocol';
 
 export interface Shared {
   cwd: string;
   log: (m: string) => void;
   context: ContextTracker;
   diffs: DiffViewer;
-  /** Permission ids whose diff was already opened (shared so two surfaces never open it twice). */
-  reviewed: Set<string>;
+  prefs: () => Prefs;
+  savePrefs: (p: Prefs) => void;
+  connection: () => Connection | undefined;
+  serverStatus: () => ServerStatus;
   attachDiagnostics: () => void;
-  newTab: () => void;
 }
 
-export interface Surface {
-  ctl: Controller;
-  route: (m: FromWebview) => void;
-}
+export class Surface {
+  private readonly tabs = new Map<string, Controller>();
+  private active = '';
+  private nextKey = 0;
+  /** Permission ids whose diff was already opened. */
+  private readonly reviewed = new Set<string>();
 
-export function createSurface(shared: Shared, view: ChatWebview, onRender?: (s: ViewState) => void): Surface {
-  const { cwd, log, context, diffs, reviewed } = shared;
-  const ctl = new Controller({
-    cwd,
-    log,
-    render: (s) => {
-      view.post({ type: 'state', state: s });
-      onRender?.(s);
-      // Open the proposed diff as soon as an edit asks for permission.
-      for (const p of s.session.permissions) {
-        if (reviewed.has(p.id)) continue;
-        reviewed.add(p.id);
-        const f = p.files[0];
-        if (f) void diffs.showProposed(p.id, f.file, f.patch, f.status);
-      }
-    },
-    showError: (m) => void vscode.window.showErrorMessage(`OpenPane: ${m}`),
-    takeContext: () => context.take(),
-  });
-  ctl.setChips(context.chips());
+  constructor(private readonly shared: Shared, private readonly view: ChatWebview) {
+    this.newTab();
+  }
 
-  async function handle(m: FromWebview): Promise<void> {
+  controllers(): Controller[] {
+    return [...this.tabs.values()];
+  }
+
+  activeController(): Controller {
+    return this.tabs.get(this.active)!;
+  }
+
+  newTab(): void {
+    const key = `t${++this.nextKey}`;
+    const { cwd, log, context } = this.shared;
+    const ctl = new Controller({
+      cwd,
+      log,
+      render: (s) => this.render(key, s),
+      prefs: this.shared.prefs,
+      savePrefs: this.shared.savePrefs,
+      showError: (m) => void vscode.window.showErrorMessage(`OpenPane: ${m}`),
+      takeContext: () => context.take(),
+    });
+    this.tabs.set(key, ctl);
+    this.active = key;
+    ctl.setChips(context.chips());
+    ctl.setServer(this.shared.serverStatus());
+    const conn = this.shared.connection();
+    if (conn) ctl.connect(conn);
+    this.render(key, ctl.state);
+  }
+
+  route(m: FromWebview): void {
+    void this.handle(m).catch((e: unknown) => {
+      this.shared.log(`error: ${String(e)}`);
+      void vscode.window.showErrorMessage(`OpenPane: ${e instanceof Error ? e.message : String(e)}`);
+    });
+  }
+
+  private render(key: string, s: ChatState): void {
+    // Open the proposed diff as soon as an edit asks for permission, whichever tab it is in.
+    for (const p of s.session.permissions) {
+      if (this.reviewed.has(p.id)) continue;
+      this.reviewed.add(p.id);
+      const f = p.files[0];
+      if (f) void this.shared.diffs.showProposed(p.id, f.file, f.patch, f.status);
+    }
+    const active = key === this.active ? s : this.tabs.get(this.active)?.state;
+    if (!active) return;
+    const tabs = [...this.tabs].map(([k, c]) => ({
+      key: k,
+      title: c.state.session.title ?? 'New session',
+      busy: c.state.session.busy || c.state.session.permissions.length > 0,
+    }));
+    this.view.post({ type: 'state', state: { ...active, tabs, activeTab: this.active } });
+  }
+
+  private renderActive(): void {
+    this.activeController().render(true);
+  }
+
+  private async handle(m: FromWebview): Promise<void> {
+    const ctl = this.activeController();
+    const { context, diffs, cwd } = this.shared;
     switch (m.type) {
+      case 'newTab': return this.newTab();
+      case 'selectTab':
+        if (this.tabs.has(m.key)) this.active = m.key;
+        return this.renderActive();
+      case 'closeTab': {
+        this.tabs.delete(m.key);
+        if (!this.tabs.size) return this.newTab();
+        if (this.active === m.key) this.active = [...this.tabs.keys()].at(-1)!;
+        return this.renderActive();
+      }
       case 'removeChip': return context.remove(m.id);
-      case 'attachDiagnostics': return shared.attachDiagnostics();
-      case 'newTab': return shared.newTab();
+      case 'attachDiagnostics': return this.shared.attachDiagnostics();
       case 'pickModel': return pickModel(ctl);
+      case 'pickVariant': return pickVariant(ctl);
       case 'pickAgent': return pickAgent(ctl);
       case 'pickSession': return pickSession(ctl);
       case 'mention': {
         const file = await pickWorkspaceFile();
-        return view.post(file ? { type: 'insert', text: `@${file} ` } : { type: 'focus' });
+        return this.view.post(file ? { type: 'insert', text: `@${file} ` } : { type: 'focus' });
       }
       case 'openFile': {
-        const uri = vscode.Uri.file(isAbsolute(m.file) ? m.file : join(cwd, m.file));
-        await vscode.window.showTextDocument(uri, { preview: true });
+        await vscode.window.showTextDocument(vscode.Uri.file(isAbsolute(m.file) ? m.file : join(cwd, m.file)), { preview: true });
         return;
       }
       case 'openPermissionDiff': {
@@ -78,12 +134,4 @@ export function createSurface(shared: Shared, view: ChatWebview, onRender?: (s: 
       default: return ctl.handle(m);
     }
   }
-
-  return {
-    ctl,
-    route: (m) => void handle(m).catch((e: unknown) => {
-      log(`error: ${String(e)}`);
-      void vscode.window.showErrorMessage(`OpenPane: ${e instanceof Error ? e.message : String(e)}`);
-    }),
-  };
 }

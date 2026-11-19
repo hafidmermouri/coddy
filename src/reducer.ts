@@ -87,7 +87,10 @@ export function fromHistory(id: string, title: string | undefined, history: Hist
   const changed = new Set<string>();
   const usage = { input: 0, output: 0, cost: 0, context: 0 };
   for (const m of history) {
-    if (m.type === 'user') messages.push({ role: 'user', id: m.id, text: m.text });
+    if (m.type === 'user') {
+      const images = (m.files ?? []).filter((f) => f.mime.startsWith('image/')).map((f) => f.name ?? 'image');
+      messages.push({ role: 'user', id: m.id, text: m.text, images });
+    }
     if (m.type !== 'assistant') continue;
     m.snapshot?.files?.forEach((f) => changed.add(f));
     if (m.tokens) {

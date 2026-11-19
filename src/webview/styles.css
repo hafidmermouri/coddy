@@ -131,3 +131,18 @@ button.icon:hover, button.link:hover { background: var(--vscode-toolbar-hoverBac
 .meter > div { height: 100%; background: var(--vscode-progressBar-background); }
 .meter.mid > div { background: var(--vscode-editorWarning-foreground); }
 .meter.high > div { background: var(--vscode-errorForeground); }
+
+.tabs { flex: 1; display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tab { display: flex; align-items: center; max-width: 160px; border-radius: 3px; flex-shrink: 0; }
+.tab.active { background: var(--vscode-tab-activeBackground, var(--vscode-toolbar-hoverBackground)); }
+.tab .tab-title {
+  background: transparent; color: var(--vscode-tab-inactiveForeground, var(--vscode-descriptionForeground));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; padding: 2px 4px;
+}
+.tab.active .tab-title { color: var(--vscode-tab-activeForeground, var(--vscode-foreground)); }
+.tab .icon { visibility: hidden; }
+.tab:hover .icon, .tab.active .icon { visibility: visible; }
+.dot { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: var(--vscode-progressBar-background); }
+.thumb { position: relative; display: inline-flex; }
+.thumb img { height: 48px; max-width: 96px; object-fit: cover; border-radius: 3px; border: 1px solid var(--vscode-panel-border); }
+.thumb button { position: absolute; top: 0; right: 0; background: var(--vscode-editor-background); }

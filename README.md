@@ -9,7 +9,10 @@ It is for code work in the open workspace only:
 - "Attach diagnostics" sends the current file's Problems.
 - Tool calls (read, write, shell, grep...) appear as live, collapsible cards. File paths open in the editor.
 - Every edit asks first. The proposed change opens in VS Code's native diff, and you Allow, Always or Deny it. The "files changed" list opens a diff of what the agent changed in each file.
-- Model and agent pickers are populated from the server. Sessions are scoped to the workspace folder, so you can start a new one or resume an old one.
+- Several sessions run side by side as tabs inside the panel (`+`). The list button resumes an earlier session of this workspace in the current tab.
+- Model, effort (model variant) and agent pickers are populated from the server. Your choices are remembered across sessions and restarts.
+- Paste images into the prompt (Cmd+V). They are sent inline to the model, which must support image input.
+- The footer shows session input/output tokens, cost, and context size against a 100k budget.
 - A status bar item shows the server state: starting, connected, reconnecting or error.
 
 ## Requirements
@@ -23,7 +26,7 @@ It is for code work in the open workspace only:
 ```sh
 npm install
 npm run package          # builds dist/ and writes openpane-<version>.vsix
-code --install-extension openpane-0.1.0.vsix
+code --install-extension openpane-0.2.0.vsix
 ```
 
 Or in VS Code: Extensions view, `...` menu, "Install from VSIX...".

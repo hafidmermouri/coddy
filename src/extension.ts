@@ -1,14 +1,17 @@
 import * as vscode from 'vscode';
 import { ContextTracker } from './context';
+import type { Prefs } from './controller';
 import { DiffViewer } from './diff';
-import { openTab, SidebarView } from './panel';
+import { SidebarView } from './panel';
 import { BinaryNotFoundError, binaryVersion, type Connection, ServerManager } from './server';
 import type { ServerStatus } from './shared/protocol';
 import { EventStream } from './sse';
-import { createSurface, type Shared, type Surface } from './surface';
+import { Surface } from './surface';
 
 let server: ServerManager | undefined;
 let stream: EventStream | undefined;
+
+const PREFS_KEY = 'openpane.prefs';
 
 export function activate(ctx: vscode.ExtensionContext): void {
   const out = vscode.window.createOutputChannel('OpenPane', { log: true });
@@ -19,53 +22,39 @@ export function activate(ctx: vscode.ExtensionContext): void {
 
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
   const hasFolder = !!vscode.workspace.workspaceFolders?.length;
-  const surfaces = new Set<Surface>();
   let conn: Connection | undefined;
   let serverStatus: ServerStatus = { kind: 'starting' };
+
+  const context = new ContextTracker((chips) => panel.controllers().forEach((c) => c.setChips(chips)));
+  const diffs = new DiffViewer(cwd);
+  const attachDiagnostics = () => {
+    if (!context.pinDiagnostics()) void vscode.window.showInformationMessage('OpenPane: open a file to attach its problems.');
+  };
+  const sidebarView = new SidebarView(ctx.extensionUri, (m) => panel.route(m));
+  const panel: Surface = new Surface({
+    cwd,
+    log,
+    context,
+    diffs,
+    attachDiagnostics,
+    // Model, effort and agent choices are remembered across windows and restarts.
+    prefs: () => ctx.globalState.get<Prefs>(PREFS_KEY, {}),
+    savePrefs: (p) => void ctx.globalState.update(PREFS_KEY, p),
+    connection: () => conn,
+    serverStatus: () => serverStatus,
+  }, sidebarView);
 
   const setStatus = (s: ServerStatus) => {
     serverStatus = s;
     showStatus(status, s);
-    surfaces.forEach((x) => x.ctl.setServer(s));
+    panel.controllers().forEach((c) => c.setServer(s));
   };
-
-  /** Registers a surface: it shares the server, the event stream and the editor context. */
-  const add = (surface: Surface): Surface => {
-    surfaces.add(surface);
-    surface.ctl.setServer(serverStatus);
-    if (conn) surface.ctl.connect(conn);
-    return surface;
-  };
-
-  const context = new ContextTracker((chips) => surfaces.forEach((x) => x.ctl.setChips(chips)));
-  const shared: Shared = {
-    cwd,
-    log,
-    context,
-    diffs: new DiffViewer(cwd),
-    reviewed: new Set(),
-    attachDiagnostics: () => {
-      if (!context.pinDiagnostics()) void vscode.window.showInformationMessage('OpenPane: open a file to attach its problems.');
-    },
-    newTab: () => {
-      let surface: Surface | undefined;
-      const panel = openTab(ctx.extensionUri, (m) => surface?.route(m));
-      surface = add(createSurface(shared, { post: (m) => void panel.webview.postMessage(m) }, (s) => {
-        panel.title = s.session.title ?? 'OpenPane';
-      }));
-      panel.onDidDispose(() => surfaces.delete(surface!));
-    },
-  };
-
-  let sidebar!: Surface;
-  const sidebarView = new SidebarView(ctx.extensionUri, (m) => sidebar.route(m));
-  sidebar = add(createSurface(shared, sidebarView));
 
   const start = async () => {
     server?.stop();
     stream?.stop();
     conn = undefined;
-    surfaces.forEach((x) => x.ctl.disconnect());
+    panel.controllers().forEach((c) => c.disconnect());
     setStatus({ kind: 'starting' });
     if (!hasFolder) return setStatus({ kind: 'error', message: 'Open a folder to use OpenPane.' });
     const cfg = vscode.workspace.getConfiguration('openpane');
@@ -75,16 +64,16 @@ export function activate(ctx: vscode.ExtensionContext): void {
     try {
       const c = await server.start();
       conn = c;
-      surfaces.forEach((x) => x.ctl.connect(c));
+      panel.controllers().forEach((x) => x.connect(c));
       // One event stream for all surfaces; each controller ignores other sessions' events.
       stream = new EventStream({
         url: `${c.baseUrl}/api/event`,
         headers: c.headers,
         log,
-        onEvent: (e) => surfaces.forEach((x) => x.ctl.onEvent(e)),
+        onEvent: (e) => panel.controllers().forEach((x) => x.onEvent(e)),
         onOpen: (reconnected) => {
           setStatus({ kind: 'connected' });
-          if (reconnected) surfaces.forEach((x) => x.ctl.resync());
+          if (reconnected) panel.controllers().forEach((x) => x.resync());
         },
         onRetry: (attempt) => setStatus({ kind: 'reconnecting', attempt }),
       });
@@ -106,14 +95,17 @@ export function activate(ctx: vscode.ExtensionContext): void {
     out,
     status,
     context,
-    shared.diffs,
+    diffs,
     vscode.window.registerWebviewViewProvider('openpane.chat', sidebarView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.commands.registerCommand('openpane.restartServer', start),
     vscode.commands.registerCommand('openpane.open', () => sidebarView.reveal()),
-    vscode.commands.registerCommand('openpane.newTab', shared.newTab),
-    vscode.commands.registerCommand('openpane.newSession', () => sidebar.ctl.newSession()),
+    vscode.commands.registerCommand('openpane.newTab', async () => {
+      panel.newTab();
+      await sidebarView.reveal();
+    }),
+    vscode.commands.registerCommand('openpane.newSession', () => panel.activeController().newSession()),
     vscode.commands.registerCommand('openpane.attachDiagnostics', async () => {
-      shared.attachDiagnostics();
+      attachDiagnostics();
       await sidebarView.reveal();
     }),
     vscode.commands.registerCommand('openpane.askAboutSelection', async () => {

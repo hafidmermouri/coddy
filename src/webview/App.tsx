@@ -1,12 +1,12 @@
 import { createSignal, For, Match, onMount, Show, Switch } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import type { Block, Chip, Message, PermissionRequest, ToolCall, ToWebview, Usage, ViewState } from '../shared/protocol';
+import type { Block, Chip, ImageAttachment, Message, PermissionRequest, ToolCall, ToWebview, Usage, ViewState } from '../shared/protocol';
 import { emptySession } from '../shared/protocol';
 import { renderMarkdown } from './markdown';
 import { send } from './vscode';
 
 export function App() {
-  const [state, setState] = createStore<ViewState>({ server: { kind: 'starting' }, session: emptySession(), chips: [] });
+  const [state, setState] = createStore<ViewState>({ tabs: [], activeTab: '', server: { kind: 'starting' }, session: emptySession(), chips: [] });
   let list!: HTMLDivElement;
   let input!: HTMLTextAreaElement;
 
@@ -25,10 +25,21 @@ export function App() {
   return (
     <div class="app">
       <header class="bar">
-        <span class="title">{state.session.title ?? 'New session'}</span>
-        <button class="icon" title="Sessions in this workspace" onClick={() => send({ type: 'pickSession' })}>☰</button>
-        <button class="icon" title="New session" onClick={() => send({ type: 'newSession' })}>+</button>
-        <button class="icon" title="New session in a separate tab" onClick={() => send({ type: 'newTab' })}>⧉</button>
+        <div class="tabs">
+          <For each={state.tabs}>
+            {(t) => (
+              <div class="tab" classList={{ active: t.key === state.activeTab }} title={t.title}>
+                <button class="tab-title" onClick={() => send({ type: 'selectTab', key: t.key })}>
+                  <Show when={t.busy}><span class="dot" /></Show>
+                  {t.title}
+                </button>
+                <button class="icon" title="Close tab" onClick={() => send({ type: 'closeTab', key: t.key })}>×</button>
+              </div>
+            )}
+          </For>
+        </div>
+        <button class="icon" title="New session tab" onClick={() => send({ type: 'newTab' })}>+</button>
+        <button class="icon" title="Resume a session in this tab" onClick={() => send({ type: 'pickSession' })}>☰</button>
       </header>
       <Show when={state.server.kind !== 'connected'}>
         <div class={`banner ${state.server.kind}`}>{serverText(state.server)}</div>
@@ -48,7 +59,7 @@ export function App() {
         </details>
       </Show>
       <For each={state.session.permissions}>{(p) => <PermissionCard req={p} />}</For>
-      <Composer busy={state.session.busy} chips={state.chips} model={state.model} agent={state.agent} ref={(el) => (input = el)} />
+      <Composer busy={state.session.busy} chips={state.chips} model={state.model} variant={state.variant} agent={state.agent} ref={(el) => (input = el)} />
       <UsageBar usage={state.session.usage} />
     </div>
   );
@@ -71,8 +82,11 @@ function MessageView(props: { msg: Message }) {
           const parsed = () => splitContext(m().text);
           return (
             <div class="msg user">
-              <Show when={parsed().labels.length}>
-                <div class="chips"><For each={parsed().labels}>{(l) => <span class="chip static">{l}</span>}</For></div>
+              <Show when={parsed().labels.length + (m().images?.length ?? 0)}>
+                <div class="chips">
+                  <For each={parsed().labels}>{(l) => <span class="chip static">{l}</span>}</For>
+                  <For each={m().images}>{(n) => <span class="chip static">🖼 {n}</span>}</For>
+                </div>
               </Show>
               {parsed().text}
             </div>
@@ -234,18 +248,49 @@ function ToolCard(props: { tool: ToolCall }) {
   );
 }
 
-function Composer(props: { busy: boolean; chips: Chip[]; model?: string; agent?: string; ref: (el: HTMLTextAreaElement) => void }) {
+/** Reads pasted clipboard images as data: URIs. */
+async function pastedImages(e: ClipboardEvent): Promise<ImageAttachment[]> {
+  const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+  if (files.length) e.preventDefault();
+  return Promise.all(
+    files.map(
+      (f, i) =>
+        new Promise<ImageAttachment>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve({ name: f.name && f.name !== 'image.png' ? f.name : `pasted-${Date.now()}-${i}.png`, dataUrl: String(r.result) });
+          r.onerror = () => reject(r.error);
+          r.readAsDataURL(f);
+        }),
+    ),
+  );
+}
+
+function Composer(props: { busy: boolean; chips: Chip[]; model?: string; variant?: string; agent?: string; ref: (el: HTMLTextAreaElement) => void }) {
   const [text, setText] = createSignal('');
+  const [images, setImages] = createSignal<ImageAttachment[]>([]);
   const submit = () => {
     const t = text().trim();
     if (!t || props.busy) return;
-    send({ type: 'send', text: t });
+    send({ type: 'send', text: t, images: images() });
     setText('');
+    setImages([]);
   };
   return (
     <div class="composer">
       <Show when={props.chips.length}>
         <div class="chips"><For each={props.chips}>{(c) => <ChipView chip={c} />}</For></div>
+      </Show>
+      <Show when={images().length}>
+        <div class="chips">
+          <For each={images()}>
+            {(img) => (
+              <span class="thumb" title={img.name}>
+                <img src={img.dataUrl} alt={img.name} />
+                <button class="icon" title="Remove image" onClick={() => setImages(images().filter((x) => x !== img))}>×</button>
+              </span>
+            )}
+          </For>
+        </div>
       </Show>
       <textarea
         ref={props.ref}
@@ -253,6 +298,7 @@ function Composer(props: { busy: boolean; chips: Chip[]; model?: string; agent?:
         placeholder="Ask the agent about this workspace (Enter to send, Shift+Enter for newline)"
         value={text()}
         onInput={(e) => setText(e.currentTarget.value)}
+        onPaste={(e) => void pastedImages(e).then((imgs) => imgs.length && setImages([...images(), ...imgs]))}
         onKeyDown={(e) => {
           const el = e.currentTarget;
           if (e.key === '@' && /(^|\s)$/.test(el.value.slice(0, el.selectionStart))) {
@@ -272,6 +318,7 @@ function Composer(props: { busy: boolean; chips: Chip[]; model?: string; agent?:
         <span class="spacer" />
         <button class="icon picker" title="Agent" onClick={() => send({ type: 'pickAgent' })}>{props.agent ?? 'agent'}</button>
         <button class="icon picker" title="Model" onClick={() => send({ type: 'pickModel' })}>{props.model ?? 'model'}</button>
+        <button class="icon picker" title="Effort (model variant)" onClick={() => send({ type: 'pickVariant' })}>{props.variant ?? 'effort'}</button>
         <Show
           when={props.busy}
           fallback={<button class="primary" disabled={!text().trim()} onClick={submit}>Send</button>}

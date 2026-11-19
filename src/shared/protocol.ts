@@ -18,7 +18,7 @@ export type Block =
   | { kind: 'tool'; tool: ToolCall };
 
 export type Message =
-  | { role: 'user'; id: string; text: string }
+  | { role: 'user'; id: string; text: string; images?: string[] }
   | { role: 'assistant'; id: string; blocks: Block[]; error?: string };
 
 export interface PermissionFile {
@@ -70,11 +70,28 @@ export interface Chip {
   auto: boolean;
 }
 
+export interface SessionTab {
+  key: string;
+  title: string;
+  busy: boolean;
+}
+
+/** An image pasted into the composer, sent inline as a data: URI. */
+export interface ImageAttachment {
+  name: string;
+  dataUrl: string;
+}
+
 export interface ViewState {
+  /** Session tabs of this panel; `session` below is the active one. */
+  tabs: SessionTab[];
+  activeTab: string;
   server: ServerStatus;
   session: SessionView;
   chips: Chip[];
   model?: string;
+  /** Model variant ("effort"), e.g. low / high. Undefined = model default. */
+  variant?: string;
   agent?: string;
 }
 
@@ -82,7 +99,7 @@ export type PermissionDecision = 'once' | 'always' | 'reject';
 
 export type FromWebview =
   | { type: 'ready' }
-  | { type: 'send'; text: string }
+  | { type: 'send'; text: string; images: ImageAttachment[] }
   | { type: 'interrupt' }
   | { type: 'permission'; id: string; decision: PermissionDecision }
   | { type: 'openPermissionDiff'; id: string; file: string }
@@ -93,6 +110,9 @@ export type FromWebview =
   | { type: 'attachDiagnostics' }
   | { type: 'pickModel' }
   | { type: 'pickAgent' }
+  | { type: 'pickVariant' }
+  | { type: 'selectTab'; key: string }
+  | { type: 'closeTab'; key: string }
   | { type: 'pickSession' }
   | { type: 'newSession' }
   | { type: 'newTab' };
