@@ -74,3 +74,15 @@ button.icon:hover, button.link:hover { background: var(--vscode-toolbar-hoverBac
 .composer textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
 .actions { display: flex; align-items: center; gap: 4px; }
 .spacer { flex: 1; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 2px;
+  max-width: 100%; padding: 0 2px 0 6px; border-radius: 3px;
+  font-size: 0.85em; font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-badge-foreground); background: var(--vscode-badge-background);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chip.auto { opacity: 0.75; }
+.chip.static { padding-right: 6px; }
+.chip button.icon { color: inherit; }

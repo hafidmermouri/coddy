@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
+import { ContextTracker, pickWorkspaceFile } from './context';
 import { Controller } from './controller';
 import { ChatPanel } from './panel';
 import { BinaryNotFoundError, binaryVersion, ServerManager } from './server';
-import type { ServerStatus } from './shared/protocol';
+import type { FromWebview, ServerStatus } from './shared/protocol';
 
 let server: ServerManager | undefined;
 let controller: Controller | undefined;
@@ -15,15 +16,30 @@ export function activate(ctx: vscode.ExtensionContext): void {
   status.show();
 
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const panel = new ChatPanel(ctx.extensionUri, (m) => void controller?.handle(m));
+  const panel = new ChatPanel(ctx.extensionUri, (m) => void route(m));
   const ctl = new Controller({
     cwd: cwd ?? process.cwd(),
     log,
-    render: (s) => panel.render(s),
+    render: (s) => panel.post({ type: 'state', state: s }),
     onStatus: (s) => showStatus(status, s),
     showError: (m) => void vscode.window.showErrorMessage(`OpenPane: ${m}`),
+    takeContext: () => context.take(),
   });
   controller = ctl;
+  const context = new ContextTracker((chips) => ctl.setChips(chips));
+  ctl.setChips(context.chips());
+
+  /** Editor-side intents are handled here; session/API intents go to the controller. */
+  async function route(m: FromWebview): Promise<void> {
+    switch (m.type) {
+      case 'removeChip': return context.remove(m.id);
+      case 'mention': {
+        const file = await pickWorkspaceFile();
+        return panel.post(file ? { type: 'insert', text: `@${file} ` } : { type: 'focus' });
+      }
+      default: return ctl.handle(m);
+    }
+  }
 
   const start = async () => {
     server?.stop();
@@ -61,6 +77,12 @@ export function activate(ctx: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider('openpane.chat', panel, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.commands.registerCommand('openpane.restartServer', start),
     vscode.commands.registerCommand('openpane.newSession', () => ctl.newSession()),
+    vscode.commands.registerCommand('openpane.askAboutSelection', async () => {
+      if (!context.pinSelection()) return void vscode.window.showInformationMessage('OpenPane: select some code first.');
+      await panel.reveal();
+      panel.post({ type: 'focus' });
+    }),
+    context,
     vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration('openpane') && void start()),
     { dispose: () => { ctl.disconnect(); server?.stop(); } },
   );

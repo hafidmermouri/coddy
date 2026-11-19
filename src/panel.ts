@@ -1,7 +1,7 @@
 // Sidebar webview host: strict CSP with a nonce, local bundle only, typed messages.
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
-import type { FromWebview, ToWebview, ViewState } from './shared/protocol';
+import type { FromWebview, ToWebview } from './shared/protocol';
 
 export class ChatPanel implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
@@ -34,8 +34,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     view.webview.onDidReceiveMessage((m: FromWebview) => this.onMessage(m));
   }
 
-  render(state: ViewState): void {
-    const msg: ToWebview = { type: 'state', state };
+  post(msg: ToWebview): void {
     void this.view?.webview.postMessage(msg);
   }
 

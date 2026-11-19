@@ -85,7 +85,10 @@ export type FromWebview =
   | { type: 'pickSession' }
   | { type: 'newSession' };
 
-export type ToWebview = { type: 'state'; state: ViewState };
+export type ToWebview =
+  | { type: 'state'; state: ViewState }
+  | { type: 'insert'; text: string }
+  | { type: 'focus' };
 
 export const emptySession = (): SessionView => ({
   busy: false,

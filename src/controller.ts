@@ -20,6 +20,8 @@ export interface ControllerHost {
   render: (state: ViewState) => void;
   onStatus: (status: ServerStatus) => void;
   showError: (msg: string) => void;
+  /** Context block for the next prompt (consumes pinned chips). */
+  takeContext: () => string;
 }
 
 export class Controller {
@@ -28,10 +30,10 @@ export class Controller {
   private stream?: EventStream;
   private renderTimer?: ReturnType<typeof setTimeout>;
   private localId = 0;
-  protected model?: ModelRef;
-  protected agent?: string;
+  private model?: ModelRef;
+  private agent?: string;
 
-  constructor(protected readonly host: ControllerHost) {}
+  constructor(private readonly host: ControllerHost) {}
 
   connect(conn: Connection): void {
     this.api = createClient<paths>({ baseUrl: conn.baseUrl, headers: conn.headers });
@@ -70,15 +72,12 @@ export class Controller {
         case 'send': return await this.send(msg.text);
         case 'interrupt': return await this.interrupt();
         case 'newSession': return this.newSession();
-        default: return this.handleMore(msg);
+        default: return;
       }
     } catch (e) {
       this.fail(e);
     }
   }
-
-  /** Extension point for later features; keeps the core switch small. */
-  protected async handleMore(_msg: FromWebview): Promise<void> {}
 
   newSession(): void {
     this.state = { ...this.state, session: emptySession() };
@@ -101,9 +100,15 @@ export class Controller {
     this.render();
   }
 
-  protected async send(text: string, context = ''): Promise<void> {
+  setChips(chips: ViewState['chips']): void {
+    this.state = { ...this.state, chips };
+    this.render();
+  }
+
+  private async send(text: string): Promise<void> {
     const api = this.requireApi();
     const sessionID = await this.ensureSession(api);
+    const context = this.host.takeContext();
     const full = context ? `${context}\n\n${text}` : text;
     const user = { role: 'user' as const, id: `local-${++this.localId}`, text: full };
     this.patchSession({ busy: true, error: undefined, messages: [...this.state.session.messages, user] });
@@ -135,23 +140,19 @@ export class Controller {
       this.state = { ...this.state, session: next };
       this.render();
     }
-    this.afterEvent(payload as ServerEvent);
   }
 
-  /** Hook for side effects on events (e.g. opening a diff when a permission arrives). */
-  protected afterEvent(_ev: ServerEvent): void {}
-
-  protected patchSession(patch: Partial<ViewState['session']>): void {
+  private patchSession(patch: Partial<ViewState['session']>): void {
     this.state = { ...this.state, session: { ...this.state.session, ...patch } };
     this.render();
   }
 
-  protected requireApi(): Api {
+  private requireApi(): Api {
     if (!this.api) throw new Error('not connected to the opencode server');
     return this.api;
   }
 
-  protected fail(e: unknown): void {
+  private fail(e: unknown): void {
     const msg = e instanceof Error ? e.message : String(e);
     this.host.log(`error: ${msg}`);
     this.patchSession({ busy: false, error: msg });
