@@ -1,3 +1,4 @@
+import { isAbsolute, join } from 'node:path';
 import * as vscode from 'vscode';
 import { ContextTracker, pickWorkspaceFile } from './context';
 import { Controller } from './controller';
@@ -36,6 +37,10 @@ export function activate(ctx: vscode.ExtensionContext): void {
       case 'mention': {
         const file = await pickWorkspaceFile();
         return panel.post(file ? { type: 'insert', text: `@${file} ` } : { type: 'focus' });
+      }
+      case 'openFile': {
+        const uri = vscode.Uri.file(isAbsolute(m.file) ? m.file : join(cwd ?? '', m.file));
+        return void vscode.window.showTextDocument(uri, { preview: true }).then(undefined, (e: unknown) => log(`open failed: ${String(e)}`));
       }
       default: return ctl.handle(m);
     }

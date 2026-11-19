@@ -76,7 +76,7 @@ export type FromWebview =
   | { type: 'interrupt' }
   | { type: 'permission'; id: string; decision: PermissionDecision }
   | { type: 'openPermissionDiff'; id: string; file: string }
-  | { type: 'openChangedFile'; file: string }
+  | { type: 'openFile'; file: string }
   | { type: 'removeChip'; id: string }
   | { type: 'mention' }
   | { type: 'attachDiagnostics' }

@@ -57,7 +57,7 @@ button.icon:hover, button.link:hover { background: var(--vscode-toolbar-hoverBac
 .md :not(pre) > code { background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; }
 .md a { color: var(--vscode-textLink-foreground); }
 
-.reasoning summary, .tool-line { color: var(--vscode-descriptionForeground); cursor: pointer; font-size: 0.9em; }
+.reasoning summary { color: var(--vscode-descriptionForeground); cursor: pointer; font-size: 0.9em; }
 .reasoning .md { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
 
 .composer { border-top: 1px solid var(--vscode-panel-border); padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
@@ -86,3 +86,22 @@ button.icon:hover, button.link:hover { background: var(--vscode-toolbar-hoverBac
 .chip.auto { opacity: 0.75; }
 .chip.static { padding-right: 6px; }
 .chip button.icon { color: inherit; }
+
+.tool { border: 1px solid var(--vscode-panel-border); border-radius: 3px; font-size: 0.9em; }
+.tool summary { display: flex; align-items: center; gap: 6px; padding: 2px 6px; cursor: pointer; list-style: none; min-width: 0; }
+.tool summary::-webkit-details-marker { display: none; }
+.tool .name { font-weight: 600; }
+.tool .target { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); color: var(--vscode-descriptionForeground); }
+.tool button.target { color: var(--vscode-textLink-foreground); }
+.tool .status { width: 1em; text-align: center; color: var(--vscode-descriptionForeground); }
+.tool.running .status { animation: spin 1s linear infinite; }
+.tool.completed .status { color: var(--vscode-testing-iconPassed); }
+.tool.error { border-color: var(--vscode-inputValidation-errorBorder); }
+.tool.error .status { color: var(--vscode-testing-iconFailed); }
+.tool .io {
+  margin: 0; padding: 4px 6px; max-height: 300px; overflow: auto;
+  border-top: 1px solid var(--vscode-panel-border);
+  font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size);
+  white-space: pre-wrap; background: var(--vscode-textCodeBlock-background);
+}
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -1,6 +1,6 @@
 import { createSignal, For, Match, onMount, Show, Switch } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import type { Block, Chip, Message, ToWebview, ViewState } from '../shared/protocol';
+import type { Block, Chip, Message, ToolCall, ToWebview, ViewState } from '../shared/protocol';
 import { emptySession } from '../shared/protocol';
 import { renderMarkdown } from './markdown';
 import { send } from './vscode';
@@ -96,7 +96,7 @@ function BlockView(props: { block: Block }) {
         )}
       </Match>
       <Match when={ofKind(props.block, 'tool')}>
-        {(t) => <div class="tool-line">{t().tool.name} · {t().tool.status}</div>}
+        {(t) => <ToolCard tool={t().tool} />}
       </Match>
     </Switch>
   );
@@ -122,6 +122,51 @@ function ChipView(props: { chip: Chip }) {
       {props.chip.label}
       <button class="icon" title="Remove" onClick={() => send({ type: 'removeChip', id: props.chip.id })}>×</button>
     </span>
+  );
+}
+
+const STATUS_ICON: Record<ToolCall['status'], string> = { pending: '○', running: '◌', completed: '✓', error: '✗' };
+const MAX_OUTPUT_LINES = 200;
+
+/** Most file and search tools carry a path; shell carries a command. */
+function toolTarget(input: ToolCall['input']): { text: string; file?: string } {
+  if (!input) return { text: '' };
+  for (const k of ['path', 'filePath', 'file']) {
+    const v = input[k];
+    if (typeof v === 'string') return { text: v, file: v };
+  }
+  for (const k of ['command', 'pattern', 'query', 'url', 'description']) {
+    const v = input[k];
+    if (typeof v === 'string') return { text: v };
+  }
+  return { text: '' };
+}
+
+function ToolCard(props: { tool: ToolCall }) {
+  const target = () => toolTarget(props.tool.input);
+  const output = () => {
+    const lines = (props.tool.output ?? '').split('\n');
+    return lines.length > MAX_OUTPUT_LINES
+      ? `${lines.slice(0, MAX_OUTPUT_LINES).join('\n')}\n… ${lines.length - MAX_OUTPUT_LINES} more lines`
+      : lines.join('\n');
+  };
+  return (
+    <details class={`tool ${props.tool.status}`} open={props.tool.status === 'error'}>
+      <summary>
+        <span class="status" title={props.tool.status}>{STATUS_ICON[props.tool.status]}</span>
+        <span class="name">{props.tool.name}</span>
+        <Show when={target().file} fallback={<span class="target">{target().text}</span>}>
+          <button class="link target" title="Open file" onClick={(e) => { e.preventDefault(); send({ type: 'openFile', file: target().file! }); }}>
+            {target().text}
+          </button>
+        </Show>
+      </summary>
+      <Show when={props.tool.input}>
+        <pre class="io">{JSON.stringify(props.tool.input, null, 2)}</pre>
+      </Show>
+      <Show when={props.tool.error}><pre class="io error">{props.tool.error}</pre></Show>
+      <Show when={props.tool.output}><pre class="io">{output()}</pre></Show>
+    </details>
   );
 }
 

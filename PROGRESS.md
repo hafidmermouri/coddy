@@ -5,8 +5,10 @@
 
 - Phase 2: context chips (active file + selection, automatic and removable), "OpenPane: Ask about selection" (command, context menu, Cmd+Alt+L), `@` file mentions via quick pick. Context is sent as a `<context>` block in the prompt text.
 
+- Phase 3: collapsible tool-call cards (name, path/command, live status, input, output capped at 200 lines); file paths open in the editor.
+
 ## Next
-- Phase 3: tool-call cards.
+- Phase 4: edit review via `vscode.diff` + permission approve/deny, changed-files list.
 
 ## Open questions
 - None.
