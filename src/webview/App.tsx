@@ -245,6 +245,7 @@ function Composer(props: { busy: boolean; chips: Chip[]; ref: (el: HTMLTextAreaE
       />
       <div class="actions">
         <button class="icon" title="Mention a file (@)" onClick={() => send({ type: 'mention' })}>@</button>
+        <button class="icon" title="Attach problems (diagnostics) of the current file" onClick={() => send({ type: 'attachDiagnostics' })}>⚠</button>
         <span class="spacer" />
         <Show
           when={props.busy}

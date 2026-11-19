@@ -9,8 +9,10 @@
 
 - Phase 4: OpenPane sessions are created with `edit -> ask`. On `permission.asked` the proposed diff opens in `vscode.diff` (patch from permission metadata applied to the file on disk); Allow / Always / Deny reply via `/permission/{id}/reply` and close the diff tabs. Changed-files list opens "agent changes" diffs via `/api/session/{id}/diff`. If a patch does not apply, the raw patch is shown.
 
+- Phase 5: "Attach diagnostics" (composer button + command) pins the current file's Problems as a context chip.
+
 ## Next
-- Phase 5: attach diagnostics.
+- Phase 6: model / agent pickers, session list.
 
 ## Open questions
 - None.

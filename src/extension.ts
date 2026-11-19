@@ -45,10 +45,15 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const context = new ContextTracker((chips) => ctl.setChips(chips));
   ctl.setChips(context.chips());
 
+  function attachDiagnostics(): void {
+    if (!context.pinDiagnostics()) void vscode.window.showInformationMessage('OpenPane: open a file to attach its problems.');
+  }
+
   /** Editor-side intents are handled here; session/API intents go to the controller. */
   async function route(m: FromWebview): Promise<void> {
     switch (m.type) {
       case 'removeChip': return context.remove(m.id);
+      case 'attachDiagnostics': return attachDiagnostics();
       case 'mention': {
         const file = await pickWorkspaceFile();
         return panel.post(file ? { type: 'insert', text: `@${file} ` } : { type: 'focus' });
@@ -109,6 +114,10 @@ export function activate(ctx: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider('openpane.chat', panel, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.commands.registerCommand('openpane.restartServer', start),
     vscode.commands.registerCommand('openpane.newSession', () => ctl.newSession()),
+    vscode.commands.registerCommand('openpane.attachDiagnostics', async () => {
+      attachDiagnostics();
+      await panel.reveal();
+    }),
     vscode.commands.registerCommand('openpane.askAboutSelection', async () => {
       if (!context.pinSelection()) return void vscode.window.showInformationMessage('OpenPane: select some code first.');
       await panel.reveal();
