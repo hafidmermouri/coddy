@@ -26,6 +26,7 @@ export function App() {
     <div class="app">
       <header class="bar">
         <span class="title">{state.session.title ?? 'New session'}</span>
+        <button class="icon" title="Sessions in this workspace" onClick={() => send({ type: 'pickSession' })}>☰</button>
         <button class="icon" title="New session" onClick={() => send({ type: 'newSession' })}>+</button>
       </header>
       <Show when={state.server.kind !== 'connected'}>
@@ -46,7 +47,7 @@ export function App() {
         </details>
       </Show>
       <For each={state.session.permissions}>{(p) => <PermissionCard req={p} />}</For>
-      <Composer busy={state.session.busy} chips={state.chips} ref={(el) => (input = el)} />
+      <Composer busy={state.session.busy} chips={state.chips} model={state.model} agent={state.agent} ref={(el) => (input = el)} />
     </div>
   );
 }
@@ -211,7 +212,7 @@ function ToolCard(props: { tool: ToolCall }) {
   );
 }
 
-function Composer(props: { busy: boolean; chips: Chip[]; ref: (el: HTMLTextAreaElement) => void }) {
+function Composer(props: { busy: boolean; chips: Chip[]; model?: string; agent?: string; ref: (el: HTMLTextAreaElement) => void }) {
   const [text, setText] = createSignal('');
   const submit = () => {
     const t = text().trim();
@@ -247,6 +248,8 @@ function Composer(props: { busy: boolean; chips: Chip[]; ref: (el: HTMLTextAreaE
         <button class="icon" title="Mention a file (@)" onClick={() => send({ type: 'mention' })}>@</button>
         <button class="icon" title="Attach problems (diagnostics) of the current file" onClick={() => send({ type: 'attachDiagnostics' })}>⚠</button>
         <span class="spacer" />
+        <button class="icon picker" title="Agent" onClick={() => send({ type: 'pickAgent' })}>{props.agent ?? 'agent'}</button>
+        <button class="icon picker" title="Model" onClick={() => send({ type: 'pickModel' })}>{props.model ?? 'model'}</button>
         <Show
           when={props.busy}
           fallback={<button class="primary" disabled={!text().trim()} onClick={submit}>Send</button>}

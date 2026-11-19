@@ -11,8 +11,10 @@
 
 - Phase 5: "Attach diagnostics" (composer button + command) pins the current file's Problems as a context chip.
 
+- Phase 6: model and agent quick picks from `/api/model` (enabled) and `/api/agent` (primary, not hidden); current model shown in the composer (server default until changed). Session list (new / resume) from `/api/session?directory=<workspace>`.
+
 ## Next
-- Phase 6: model / agent pickers, session list.
+- README, packaging, clean-window install check.
 
 ## Open questions
 - None.

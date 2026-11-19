@@ -8,6 +8,9 @@ import { emptySession, type FromWebview, type PermissionDecision, type ServerSta
 
 type Api = Client<paths>;
 type ModelRef = components['schemas']['Model.Ref'];
+export type ModelInfo = components['schemas']['Model.Info'];
+export type AgentInfo = components['schemas']['Agent.Info'];
+export type SessionInfo = components['schemas']['Session.Info'];
 
 /** OpenPane sessions always ask before editing, so every edit goes through the diff review. */
 const SESSION_PERMISSIONS: components['schemas']['Permission.Ruleset'] = [
@@ -46,11 +49,68 @@ export class Controller {
       onOpen: (reconnected) => {
         this.setServer({ kind: 'connected' });
         // Fallback path: events may have been missed while disconnected, so refetch the session.
-        if (reconnected && this.state.session.id) void this.resume(this.state.session.id, this.state.session.title);
+        if (reconnected && this.state.session.id) void this.resume(this.state.session.id).catch((e: unknown) => this.fail(e));
       },
       onRetry: (attempt) => this.setServer({ kind: 'reconnecting', attempt }),
     });
     this.stream.start();
+    void this.loadDefaultModel().catch((e: unknown) => this.host.log(`default model lookup failed: ${String(e)}`));
+  }
+
+  private get location() {
+    return { directory: this.host.cwd };
+  }
+
+  private async loadDefaultModel(): Promise<void> {
+    const res = await this.requireApi().GET('/api/model/default', { params: { query: { location: this.location } } });
+    const m = res.data?.data;
+    if (m && !this.model) this.setLabels(m.name, this.state.agent);
+  }
+
+  async listModels(): Promise<ModelInfo[]> {
+    const res = await this.requireApi().GET('/api/model', { params: { query: { location: this.location } } });
+    if (!res.data) throw new Error(`could not list models: ${errorText(res.error)}`);
+    return res.data.data.filter((m) => m.enabled);
+  }
+
+  async listAgents(): Promise<AgentInfo[]> {
+    const res = await this.requireApi().GET('/api/agent', { params: { query: { location: this.location } } });
+    if (!res.data) throw new Error(`could not list agents: ${errorText(res.error)}`);
+    return res.data.data.filter((a) => a.mode !== 'subagent' && !a.hidden);
+  }
+
+  /** Top-level sessions for this workspace folder, newest first. */
+  async listSessions(): Promise<SessionInfo[]> {
+    const res = await this.requireApi().GET('/api/session', {
+      params: { query: { directory: this.host.cwd, order: 'desc', limit: '50', parentID: 'null' } },
+    });
+    if (!res.data) throw new Error(`could not list sessions: ${errorText(res.error)}`);
+    return res.data.data.filter((s) => !s.parentID);
+  }
+
+  async setModel(model: ModelInfo): Promise<void> {
+    this.model = { id: model.id, providerID: model.providerID };
+    const sessionID = this.state.session.id;
+    if (sessionID) {
+      const res = await this.requireApi().POST('/api/session/{sessionID}/model', { params: { path: { sessionID } }, body: { model: this.model } });
+      if (res.error) throw new Error(`could not switch model: ${errorText(res.error)}`);
+    }
+    this.setLabels(model.name, this.state.agent);
+  }
+
+  async setAgent(agent: AgentInfo): Promise<void> {
+    this.agent = agent.id;
+    const sessionID = this.state.session.id;
+    if (sessionID) {
+      const res = await this.requireApi().POST('/api/session/{sessionID}/agent', { params: { path: { sessionID } }, body: { agent: agent.id } });
+      if (res.error) throw new Error(`could not switch agent: ${errorText(res.error)}`);
+    }
+    this.setLabels(this.state.model, agent.name);
+  }
+
+  private setLabels(model: string | undefined, agent: string | undefined): void {
+    this.state = { ...this.state, model, agent };
+    this.render();
   }
 
   disconnect(): void {
@@ -85,19 +145,23 @@ export class Controller {
     this.render();
   }
 
-  async resume(id: string, title?: string): Promise<void> {
+  async resume(id: string): Promise<void> {
     const api = this.requireApi();
-    const [history, perms] = await Promise.all([
+    const [info, history, perms] = await Promise.all([
+      api.GET('/api/session/{sessionID}', { params: { path: { sessionID: id } } }),
       api.GET('/api/session/{sessionID}/message', { params: { path: { sessionID: id }, query: { order: 'asc', limit: '500' } } }),
       api.GET('/api/session/{sessionID}/permission', { params: { path: { sessionID: id } } }),
     ]);
     if (!history.data) throw new Error(`could not load session ${id}: ${errorText(history.error)}`);
     // openapi-fetch rewrites empty-object schemas ({} vs Record<string, never>); the payload is the spec type.
-    let session = fromHistory(id, title, history.data.data as HistoryMessage[]);
+    const meta = info.data?.data;
+    if (meta?.model) this.model = meta.model;
+    if (meta?.agent) this.agent = meta.agent;
+    let session = fromHistory(id, meta?.title, history.data.data as HistoryMessage[]);
     for (const p of perms.data?.data ?? []) {
       session = reduce(session, { type: 'permission.asked', id: p.id, created: 0, data: p } as ServerEvent);
     }
-    this.state = { ...this.state, session };
+    this.state = { ...this.state, session, agent: this.agent ?? this.state.agent, model: this.model ? `${this.model.providerID}/${this.model.id}` : this.state.model };
     this.render();
   }
 

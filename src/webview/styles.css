@@ -119,3 +119,5 @@ button.icon:hover, button.link:hover { background: var(--vscode-toolbar-hoverBac
 .changed { margin: 0 8px 4px; font-size: 0.9em; }
 .changed summary { cursor: pointer; color: var(--vscode-descriptionForeground); }
 .changed button.link { display: block; font-family: var(--vscode-editor-font-family); }
+
+.picker { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-descriptionForeground); font-size: 0.9em; }

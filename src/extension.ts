@@ -4,6 +4,7 @@ import { ContextTracker, pickWorkspaceFile } from './context';
 import { Controller } from './controller';
 import { DiffViewer } from './diff';
 import { ChatPanel } from './panel';
+import { pickAgent, pickModel, pickSession } from './pickers';
 import { BinaryNotFoundError, binaryVersion, ServerManager } from './server';
 import type { FromWebview, ServerStatus } from './shared/protocol';
 
@@ -54,6 +55,9 @@ export function activate(ctx: vscode.ExtensionContext): void {
     switch (m.type) {
       case 'removeChip': return context.remove(m.id);
       case 'attachDiagnostics': return attachDiagnostics();
+      case 'pickModel': return pickModel(ctl);
+      case 'pickAgent': return pickAgent(ctl);
+      case 'pickSession': return pickSession(ctl);
       case 'mention': {
         const file = await pickWorkspaceFile();
         return panel.post(file ? { type: 'insert', text: `@${file} ` } : { type: 'focus' });
