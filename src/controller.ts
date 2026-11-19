@@ -1,7 +1,7 @@
 // Extension-host state owner: API client, event stream, session state and webview intents.
 import createClient, { type Client } from 'openapi-fetch';
 import type { components, paths } from './generated/api';
-import { fromHistory, type HistoryMessage, isRecord, reduce, type ServerEvent } from './reducer';
+import { fromHistory, type HistoryMessage, isRecord, reduce, type ServerEvent, toPermission } from './reducer';
 import { type Connection } from './server';
 import { EventStream } from './sse';
 import { emptySession, type FromWebview, type PermissionDecision, type ServerStatus, type ViewState } from './shared/protocol';
@@ -149,7 +149,7 @@ export class Controller {
     const api = this.requireApi();
     const [info, history, perms] = await Promise.all([
       api.GET('/api/session/{sessionID}', { params: { path: { sessionID: id } } }),
-      api.GET('/api/session/{sessionID}/message', { params: { path: { sessionID: id }, query: { order: 'asc', limit: '500' } } }),
+      api.GET('/api/session/{sessionID}/message', { params: { path: { sessionID: id }, query: { order: 'desc', limit: '200' } } }),
       api.GET('/api/session/{sessionID}/permission', { params: { path: { sessionID: id } } }),
     ]);
     if (!history.data) throw new Error(`could not load session ${id}: ${errorText(history.error)}`);
@@ -157,10 +157,11 @@ export class Controller {
     const meta = info.data?.data;
     if (meta?.model) this.model = meta.model;
     if (meta?.agent) this.agent = meta.agent;
-    let session = fromHistory(id, meta?.title, history.data.data as HistoryMessage[]);
-    for (const p of perms.data?.data ?? []) {
-      session = reduce(session, { type: 'permission.asked', id: p.id, created: 0, data: p } as ServerEvent);
-    }
+    // The API caps a page at 200 messages: load the newest page and show it oldest-first.
+    const session = {
+      ...fromHistory(id, meta?.title, (history.data.data as HistoryMessage[]).slice().reverse()),
+      permissions: (perms.data?.data ?? []).map(toPermission),
+    };
     this.state = { ...this.state, session, agent: this.agent ?? this.state.agent, model: this.model ? `${this.model.providerID}/${this.model.id}` : this.state.model };
     this.render();
   }

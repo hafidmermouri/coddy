@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",
+  "repository": { "type": "git", "url": "local" },
   "private": true,
   "engines": {
     "vscode": "^1.100.0"

@@ -1,7 +1,7 @@
 // Pure reducer: opencode v2 events (GET /api/event) -> SessionView.
 // Events for other sessions and event types the UI does not show are ignored.
 import type { components, paths } from './generated/api';
-import type { Block, Message, PermissionFile, SessionView, ToolCall } from './shared/protocol';
+import type { Block, Message, PermissionFile, PermissionRequest, SessionView, ToolCall } from './shared/protocol';
 
 type S = components['schemas'];
 export type ServerEvent = S['V2Event'];
@@ -69,10 +69,9 @@ export function reduce(state: SessionView, ev: ServerEvent): SessionView {
         output: contentText(ev.data.content ?? []),
       });
     case 'permission.asked': {
-      const d = ev.data;
-      if (state.permissions.some((p) => p.id === d.id)) return state;
-      const perm = { id: d.id, action: d.action, resources: d.resources, files: permissionFiles(d.metadata) };
-      return { ...state, permissions: [...state.permissions, perm] };
+      const { id, action, resources, metadata } = ev.data;
+      if (state.permissions.some((p) => p.id === id)) return state;
+      return { ...state, permissions: [...state.permissions, toPermission({ id, action, resources, metadata })] };
     }
     case 'permission.replied':
       return { ...state, permissions: state.permissions.filter((p) => p.id !== ev.data.requestID) };
@@ -148,6 +147,11 @@ function updateTool(state: SessionView, mid: string, id: string, patch: Partial<
 
 function contentText(content: ToolContent[]): string {
   return content.map((c) => (c.type === 'text' ? c.text : `[file ${'uri' in c ? String(c.uri) : ''}]`)).join('\n');
+}
+
+/** Shared by the permission.asked event and GET /api/session/{id}/permission (same Permission.Request shape). */
+export function toPermission(p: { id: string; action: string; resources: string[]; metadata?: unknown }): PermissionRequest {
+  return { id: p.id, action: p.action, resources: p.resources, files: permissionFiles(p.metadata) };
 }
 
 /** permission.asked metadata is untyped in the spec; edit requests carry `files[{file, patch, ...}]`. */

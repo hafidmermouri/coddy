@@ -30,6 +30,15 @@ describe('ServerManager', () => {
     expect(log.mock.calls.flat().join('\n')).not.toMatch(/password/);
   });
 
+  it('kills the server when the extension host goes away without calling stop', async () => {
+    const m = manager();
+    const conn = await m.start();
+    const pid = await pidOf(conn);
+    // Simulate the host dying: its end of the watchdog pipe closes.
+    (m as unknown as { child: { stdin: { destroy(): void } } }).child.stdin.destroy();
+    await vi.waitFor(() => expect(alive(pid)).toBe(false));
+  });
+
   it('reports a missing binary clearly', async () => {
     await expect(manager({ binaryPath: '/nope/opencode' }).start()).rejects.toBeInstanceOf(BinaryNotFoundError);
   });

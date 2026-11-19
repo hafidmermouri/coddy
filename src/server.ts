@@ -24,6 +24,15 @@ export interface ServerOptions {
 
 export class BinaryNotFoundError extends Error {}
 
+const SERVE_ARGS = ['serve', '--port', '0', '--hostname', '127.0.0.1'];
+
+/**
+ * POSIX watchdog: runs opencode and kills it when our stdin pipe closes, which happens when
+ * the extension host exits for any reason (including crashes, where deactivate never runs).
+ * Exits with opencode's status, so 127 still means "binary not found".
+ */
+const WATCHDOG = 'exec 3<&0; "$@" & c=$!; { read _ <&3; kill $c 2>/dev/null; } & wait $c';
+
 const basicAuth = (user: string, pass: string) =>
   'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64');
 
@@ -58,8 +67,9 @@ export class ServerManager {
   stop(): void {
     this.stopping = true;
     if (this.child && this.child.exitCode === null) {
-      this.opts.log(`stopping opencode serve (pid ${this.child.pid})`);
-      this.child.kill('SIGTERM');
+      this.opts.log('stopping opencode serve');
+      if (process.platform === 'win32') this.child.kill();
+      else this.child.stdin?.end(); // the watchdog kills opencode and exits
     }
     this.child = undefined;
   }
@@ -68,11 +78,12 @@ export class ServerManager {
     const bin = resolveBinary(this.opts.binaryPath);
     const password = randomBytes(24).toString('base64url');
     this.stopping = false;
-    this.opts.log(`spawning ${bin} serve --port 0 --hostname 127.0.0.1 (cwd ${this.opts.cwd})`);
-    const child = spawn(bin, ['serve', '--port', '0', '--hostname', '127.0.0.1'], {
+    this.opts.log(`spawning ${bin} ${SERVE_ARGS.join(' ')} (cwd ${this.opts.cwd})`);
+    const posix = process.platform !== 'win32';
+    const child = spawn(posix ? '/bin/sh' : bin, posix ? ['-c', WATCHDOG, 'openpane-watchdog', bin, ...SERVE_ARGS] : SERVE_ARGS, {
       cwd: this.opts.cwd,
       env: { ...process.env, OPENCODE_SERVER_PASSWORD: password },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [posix ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
     this.child = child;
     const tail: string[] = [];
@@ -110,7 +121,7 @@ export class ServerManager {
         clearTimeout(timer);
         const msg = `opencode serve exited (code ${code}, signal ${signal})${tail.length ? ': ' + tail.slice(-3).join(' | ') : ''}`;
         this.opts.log(msg);
-        if (!ready) reject(new Error(msg));
+        if (!ready) reject(code === 127 ? new BinaryNotFoundError(`opencode binary not found: "${bin}". Set openpane.binaryPath.`) : new Error(msg));
         else if (!this.stopping) this.opts.onExit(msg);
       });
     });

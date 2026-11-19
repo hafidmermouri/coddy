@@ -121,3 +121,4 @@ button.icon:hover, button.link:hover { background: var(--vscode-toolbar-hoverBac
 .changed button.link { display: block; font-family: var(--vscode-editor-font-family); }
 
 .picker { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
+.tool button.target { direction: rtl; text-align: left; } /* ellipsis on the left keeps the file name visible */

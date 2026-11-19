@@ -13,8 +13,24 @@
 
 - Phase 6: model and agent quick picks from `/api/model` (enabled) and `/api/agent` (primary, not hidden); current model shown in the composer (server default until changed). Session list (new / resume) from `/api/session?directory=<workspace>`.
 
+- README, `.vsix` packaging (58 KB), install + activation verified in a clean VS Code profile (server spawned via `~/.opencode/bin` fallback, event stream connected, version check matched).
+- POSIX watchdog: opencode is killed even when VS Code dies without calling `deactivate` (verified with a force kill: 0 orphans).
+- Live round trip verified against the real server via the controller: edit permission with patch -> approve -> file changed, `/diff`, resume, interrupt.
+
 ## Next
-- README, packaging, clean-window install check.
+- Manual UI pass in your own VS Code (see "Not verified" below).
+
+## Not verified
+- Webview UI interactions (clicking, chips, diff tabs opening/closing, pickers) were not driven by automation; only build/type-check and the extension-host logic were exercised.
+- Windows (no watchdog there; plain kill on deactivate).
+
+## v2 API notes (differences from docs/first prompt)
+- Spec is at `/openapi.json` (`/doc` is the web UI). v1 routes (`/session`, `/event`) now return the web UI HTML.
+- `opencode serve` honours `OPENCODE_SERVER_PASSWORD` and `--port 0`; it generates and prints a password if none is set.
+- `GET /api/session/{id}/message` rejects `limit > 200` although the spec does not state a maximum.
+- Permission requests for edits carry `metadata.files[{file, patch, status, additions, deletions}]`; the spec types metadata as an empty object.
+- Permission action is `edit` even when the tool is `write`.
+- Default model on this machine resolves to `opencode/tidepool-alpha-free`, not an OpenRouter model; pick one in the model picker if needed.
 
 ## Open questions
 - None.
