@@ -1,6 +1,6 @@
 import { createSignal, For, Match, onMount, Show, Switch } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import type { Block, Chip, Message, PermissionRequest, ToolCall, ToWebview, ViewState } from '../shared/protocol';
+import type { Block, Chip, Message, PermissionRequest, ToolCall, ToWebview, Usage, ViewState } from '../shared/protocol';
 import { emptySession } from '../shared/protocol';
 import { renderMarkdown } from './markdown';
 import { send } from './vscode';
@@ -28,6 +28,7 @@ export function App() {
         <span class="title">{state.session.title ?? 'New session'}</span>
         <button class="icon" title="Sessions in this workspace" onClick={() => send({ type: 'pickSession' })}>☰</button>
         <button class="icon" title="New session" onClick={() => send({ type: 'newSession' })}>+</button>
+        <button class="icon" title="New session in a separate tab" onClick={() => send({ type: 'newTab' })}>⧉</button>
       </header>
       <Show when={state.server.kind !== 'connected'}>
         <div class={`banner ${state.server.kind}`}>{serverText(state.server)}</div>
@@ -48,6 +49,7 @@ export function App() {
       </Show>
       <For each={state.session.permissions}>{(p) => <PermissionCard req={p} />}</For>
       <Composer busy={state.session.busy} chips={state.chips} model={state.model} agent={state.agent} ref={(el) => (input = el)} />
+      <UsageBar usage={state.session.usage} />
     </div>
   );
 }
@@ -132,6 +134,26 @@ function ChipView(props: { chip: Chip }) {
       {props.chip.label}
       <button class="icon" title="Remove" onClick={() => send({ type: 'removeChip', id: props.chip.id })}>×</button>
     </span>
+  );
+}
+
+/** Context budget the bar measures against. */
+const CONTEXT_BUDGET = 100_000;
+
+const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k` : String(n));
+
+function UsageBar(props: { usage: Usage }) {
+  const pct = () => Math.min(100, (props.usage.context / CONTEXT_BUDGET) * 100);
+  const level = () => (pct() >= 90 ? 'high' : pct() >= 70 ? 'mid' : 'low');
+  return (
+    <div class="usage" title={`Session totals: ${props.usage.input} input tokens (incl. cache), ${props.usage.output} output tokens (incl. reasoning). Context: ${props.usage.context} tokens of the ${fmt(CONTEXT_BUDGET)} budget.`}>
+      <span>in {fmt(props.usage.input)}</span>
+      <span>out {fmt(props.usage.output)}</span>
+      <span>${props.usage.cost.toFixed(4)}</span>
+      <span class="spacer" />
+      <span>ctx {fmt(props.usage.context)} / {fmt(CONTEXT_BUDGET)}</span>
+      <div class={`meter ${level()}`}><div style={{ width: `${pct()}%` }} /></div>
+    </div>
   );
 }
 

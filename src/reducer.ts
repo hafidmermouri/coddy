@@ -29,10 +29,11 @@ export function reduce(state: SessionView, ev: ServerEvent): SessionView {
     case 'session.step.failed':
       return updateAssistant(state, ev.data.assistantMessageID, (blocks) => blocks, ev.data.error.message);
     case 'session.step.ended': {
-      const files = ev.data.files ?? [];
-      const changed = [...new Set([...state.changedFiles, ...files])];
-      return changed.length === state.changedFiles.length ? state : { ...state, changedFiles: changed };
+      const changedFiles = [...new Set([...state.changedFiles, ...(ev.data.files ?? [])])];
+      return { ...state, changedFiles, usage: { ...state.usage, context: contextTokens(ev.data.tokens) } };
     }
+    case 'session.usage.updated':
+      return { ...state, usage: { ...state.usage, ...totals(ev.data.tokens, ev.data.cost) } };
     case 'session.text.started':
     case 'session.reasoning.started': {
       const kind = ev.type === 'session.text.started' ? 'text' : 'reasoning';
@@ -84,10 +85,18 @@ export function reduce(state: SessionView, ev: ServerEvent): SessionView {
 export function fromHistory(id: string, title: string | undefined, history: HistoryMessage[]): SessionView {
   const messages: Message[] = [];
   const changed = new Set<string>();
+  const usage = { input: 0, output: 0, cost: 0, context: 0 };
   for (const m of history) {
     if (m.type === 'user') messages.push({ role: 'user', id: m.id, text: m.text });
     if (m.type !== 'assistant') continue;
     m.snapshot?.files?.forEach((f) => changed.add(f));
+    if (m.tokens) {
+      const t = totals(m.tokens, m.cost ?? 0);
+      usage.input += t.input;
+      usage.output += t.output;
+      usage.cost += t.cost;
+      usage.context = contextTokens(m.tokens);
+    }
     const blocks: Block[] = m.content.map((c, i): Block => {
       if (c.type === 'text') return { kind: 'text', ordinal: i, text: c.text };
       if (c.type === 'reasoning') return { kind: 'reasoning', ordinal: i, text: c.text };
@@ -100,7 +109,18 @@ export function fromHistory(id: string, title: string | undefined, history: Hist
     });
     messages.push({ role: 'assistant', id: m.id, blocks, error: m.error?.message });
   }
-  return { id, title, busy: false, messages, permissions: [], changedFiles: [...changed] };
+  return { id, title, busy: false, messages, permissions: [], changedFiles: [...changed], usage };
+}
+
+type Tokens = S['TokenUsage.Info'];
+
+export function totals(t: Tokens, cost: number): { input: number; output: number; cost: number } {
+  return { input: t.input + t.cache.read + t.cache.write, output: t.output + t.reasoning, cost };
+}
+
+/** What the next request carries: the last prompt plus what the model produced in reply. */
+function contextTokens(t: Tokens): number {
+  return t.input + t.cache.read + t.cache.write + t.output + t.reasoning;
 }
 
 function ensureAssistant(state: SessionView, id: string): SessionView {

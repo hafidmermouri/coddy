@@ -1,9 +1,9 @@
-// Extension-host state owner: API client, event stream, session state and webview intents.
+// Extension-host state owner for one chat surface: API client, session state and webview intents.
+// Events arrive from the shared stream in extension.ts via onEvent().
 import createClient, { type Client } from 'openapi-fetch';
 import type { components, paths } from './generated/api';
-import { fromHistory, type HistoryMessage, isRecord, reduce, type ServerEvent, toPermission } from './reducer';
+import { fromHistory, type HistoryMessage, isRecord, reduce, type ServerEvent, toPermission, totals } from './reducer';
 import { type Connection } from './server';
-import { EventStream } from './sse';
 import { emptySession, type FromWebview, type PermissionDecision, type ServerStatus, type ViewState } from './shared/protocol';
 
 type Api = Client<paths>;
@@ -21,7 +21,6 @@ export interface ControllerHost {
   cwd: string;
   log: (msg: string) => void;
   render: (state: ViewState) => void;
-  onStatus: (status: ServerStatus) => void;
   showError: (msg: string) => void;
   /** Context block for the next prompt (consumes pinned chips). */
   takeContext: () => string;
@@ -30,7 +29,6 @@ export interface ControllerHost {
 export class Controller {
   state: ViewState = { server: { kind: 'starting' }, session: emptySession(), chips: [] };
   private api?: Api;
-  private stream?: EventStream;
   private renderTimer?: ReturnType<typeof setTimeout>;
   private localId = 0;
   private model?: ModelRef;
@@ -40,20 +38,6 @@ export class Controller {
 
   connect(conn: Connection): void {
     this.api = createClient<paths>({ baseUrl: conn.baseUrl, headers: conn.headers });
-    this.stream?.stop();
-    this.stream = new EventStream({
-      url: `${conn.baseUrl}/api/event`,
-      headers: conn.headers,
-      log: this.host.log,
-      onEvent: (e) => this.onEvent(e),
-      onOpen: (reconnected) => {
-        this.setServer({ kind: 'connected' });
-        // Fallback path: events may have been missed while disconnected, so refetch the session.
-        if (reconnected && this.state.session.id) void this.resume(this.state.session.id).catch((e: unknown) => this.fail(e));
-      },
-      onRetry: (attempt) => this.setServer({ kind: 'reconnecting', attempt }),
-    });
-    this.stream.start();
     void this.loadDefaultModel().catch((e: unknown) => this.host.log(`default model lookup failed: ${String(e)}`));
   }
 
@@ -114,15 +98,17 @@ export class Controller {
   }
 
   disconnect(): void {
-    this.stream?.stop();
-    this.stream = undefined;
     this.api = undefined;
   }
 
   setServer(server: ServerStatus): void {
     this.state = { ...this.state, server };
-    this.host.onStatus(server);
     this.render();
+  }
+
+  /** Fallback path after the shared stream reconnects: events may have been missed, so refetch. */
+  resync(): void {
+    if (this.state.session.id) void this.resume(this.state.session.id).catch((e: unknown) => this.fail(e));
   }
 
   async handle(msg: FromWebview): Promise<void> {
@@ -158,9 +144,12 @@ export class Controller {
     if (meta?.model) this.model = meta.model;
     if (meta?.agent) this.agent = meta.agent;
     // The API caps a page at 200 messages: load the newest page and show it oldest-first.
+    const base = fromHistory(id, meta?.title, (history.data.data as HistoryMessage[]).slice().reverse());
     const session = {
-      ...fromHistory(id, meta?.title, (history.data.data as HistoryMessage[]).slice().reverse()),
+      ...base,
       permissions: (perms.data?.data ?? []).map(toPermission),
+      // Session totals from the server also cover messages beyond the 200 loaded.
+      usage: meta ? { ...base.usage, ...totals(meta.tokens, meta.cost) } : base.usage,
     };
     this.state = { ...this.state, session, agent: this.agent ?? this.state.agent, model: this.model ? `${this.model.providerID}/${this.model.id}` : this.state.model };
     this.render();
@@ -220,7 +209,7 @@ export class Controller {
     return res.data.data.id;
   }
 
-  private onEvent(payload: unknown): void {
+  onEvent(payload: unknown): void {
     if (!isRecord(payload) || typeof payload.type !== 'string') return;
     const next = reduce(this.state.session, payload as ServerEvent);
     if (next !== this.state.session) {

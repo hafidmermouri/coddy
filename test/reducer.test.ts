@@ -51,6 +51,12 @@ describe('reduce', () => {
     expect(assistantBlocks(done).find((b) => b.kind === 'tool')).toMatchObject({ tool: { status: 'completed' } });
   });
 
+  it('tracks session token totals, cost and context size', () => {
+    const s = replay('edit');
+    // Totals come from the last session.usage.updated; context from the last step.
+    expect(s.usage).toEqual({ input: 4750 + 28792, output: 33 + 442, cost: 0, context: 12 + 16968 + 15 + 53 });
+  });
+
   it('captures shell tool output', () => {
     const tool = assistantBlocks(replay('shell')).find((b) => b.kind === 'tool');
     expect(tool).toMatchObject({ tool: { name: 'shell', status: 'completed', input: { command: 'ls' } } });

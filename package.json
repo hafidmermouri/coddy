@@ -5,10 +5,13 @@
   "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",
-  "repository": { "type": "git", "url": "local" },
+  "repository": {
+    "type": "git",
+    "url": "local"
+  },
   "private": true,
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": "^1.106.0"
   },
   "categories": [
     "AI"
@@ -19,7 +22,7 @@
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
-      "activitybar": [
+      "secondarySidebar": [
         {
           "id": "openpane",
           "title": "OpenPane",
@@ -37,6 +40,20 @@
       ]
     },
     "commands": [
+      {
+        "command": "openpane.open",
+        "title": "Open OpenPane",
+        "category": "OpenPane",
+        "icon": {
+          "light": "media/icon-light.svg",
+          "dark": "media/icon.svg"
+        }
+      },
+      {
+        "command": "openpane.newTab",
+        "title": "New session in tab",
+        "category": "OpenPane"
+      },
       {
         "command": "openpane.askAboutSelection",
         "title": "Ask about selection",
@@ -72,6 +89,12 @@
           "command": "openpane.askAboutSelection",
           "when": "editorHasSelection",
           "group": "navigation@9"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "openpane.open",
+          "group": "navigation"
         }
       ]
     },

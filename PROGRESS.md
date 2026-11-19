@@ -17,6 +17,8 @@
 - POSIX watchdog: opencode is killed even when VS Code dies without calling `deactivate` (verified with a force kill: 0 orphans).
 - Live round trip verified against the real server via the controller: edit permission with patch -> approve -> file changed, `/diff`, resume, interrupt.
 
+- Post-MVP: panel in the secondary side bar + editor-title button, "OP" logo, sessions in separate editor tabs (one controller per surface, one shared event stream), usage footer (session in/out tokens, cost, context size vs 100k with bar).
+
 ## Next
 - Manual UI pass in your own VS Code (see "Not verified" below).
 

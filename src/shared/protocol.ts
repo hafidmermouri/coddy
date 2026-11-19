@@ -36,6 +36,15 @@ export interface PermissionRequest {
   files: PermissionFile[];
 }
 
+export interface Usage {
+  /** Session totals: prompt tokens (incl. cache reads/writes) and generated tokens (incl. reasoning). */
+  input: number;
+  output: number;
+  cost: number;
+  /** Tokens in the context window as of the last model step. */
+  context: number;
+}
+
 export interface SessionView {
   id?: string;
   title?: string;
@@ -43,6 +52,7 @@ export interface SessionView {
   messages: Message[];
   permissions: PermissionRequest[];
   changedFiles: string[];
+  usage: Usage;
   error?: string;
 }
 
@@ -84,7 +94,8 @@ export type FromWebview =
   | { type: 'pickModel' }
   | { type: 'pickAgent' }
   | { type: 'pickSession' }
-  | { type: 'newSession' };
+  | { type: 'newSession' }
+  | { type: 'newTab' };
 
 export type ToWebview =
   | { type: 'state'; state: ViewState }
@@ -96,4 +107,5 @@ export const emptySession = (): SessionView => ({
   messages: [],
   permissions: [],
   changedFiles: [],
+  usage: { input: 0, output: 0, cost: 0, context: 0 },
 });
