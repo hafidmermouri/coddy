@@ -7,8 +7,10 @@
 
 - Phase 3: collapsible tool-call cards (name, path/command, live status, input, output capped at 200 lines); file paths open in the editor.
 
+- Phase 4: OpenPane sessions are created with `edit -> ask`. On `permission.asked` the proposed diff opens in `vscode.diff` (patch from permission metadata applied to the file on disk); Allow / Always / Deny reply via `/permission/{id}/reply` and close the diff tabs. Changed-files list opens "agent changes" diffs via `/api/session/{id}/diff`. If a patch does not apply, the raw patch is shown.
+
 ## Next
-- Phase 4: edit review via `vscode.diff` + permission approve/deny, changed-files list.
+- Phase 5: attach diagnostics.
 
 ## Open questions
 - None.

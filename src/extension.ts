@@ -2,6 +2,7 @@ import { isAbsolute, join } from 'node:path';
 import * as vscode from 'vscode';
 import { ContextTracker, pickWorkspaceFile } from './context';
 import { Controller } from './controller';
+import { DiffViewer } from './diff';
 import { ChatPanel } from './panel';
 import { BinaryNotFoundError, binaryVersion, ServerManager } from './server';
 import type { FromWebview, ServerStatus } from './shared/protocol';
@@ -17,11 +18,25 @@ export function activate(ctx: vscode.ExtensionContext): void {
   status.show();
 
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const panel = new ChatPanel(ctx.extensionUri, (m) => void route(m));
+  const panel = new ChatPanel(ctx.extensionUri, (m) => void route(m).catch((e: unknown) => {
+    log(`error: ${String(e)}`);
+    void vscode.window.showErrorMessage(`OpenPane: ${e instanceof Error ? e.message : String(e)}`);
+  }));
+  const diffs = new DiffViewer(cwd ?? process.cwd());
+  const reviewed = new Set<string>();
   const ctl = new Controller({
     cwd: cwd ?? process.cwd(),
     log,
-    render: (s) => panel.post({ type: 'state', state: s }),
+    render: (s) => {
+      panel.post({ type: 'state', state: s });
+      // Open the proposed diff as soon as an edit asks for permission.
+      for (const p of s.session.permissions) {
+        if (reviewed.has(p.id)) continue;
+        reviewed.add(p.id);
+        const f = p.files[0];
+        if (f) void diffs.showProposed(p.id, f.file, f.patch, f.status);
+      }
+    },
     onStatus: (s) => showStatus(status, s),
     showError: (m) => void vscode.window.showErrorMessage(`OpenPane: ${m}`),
     takeContext: () => context.take(),
@@ -42,6 +57,18 @@ export function activate(ctx: vscode.ExtensionContext): void {
         const uri = vscode.Uri.file(isAbsolute(m.file) ? m.file : join(cwd ?? '', m.file));
         return void vscode.window.showTextDocument(uri, { preview: true }).then(undefined, (e: unknown) => log(`open failed: ${String(e)}`));
       }
+      case 'openPermissionDiff': {
+        const f = ctl.state.session.permissions.find((p) => p.id === m.id)?.files.find((x) => x.file === m.file);
+        return f && diffs.showProposed(m.id, f.file, f.patch, f.status);
+      }
+      case 'openChangedDiff': {
+        const d = (await ctl.sessionDiff()).find((x) => x.file === m.file || m.file.endsWith(x.file));
+        if (!d) return void vscode.window.showInformationMessage(`OpenPane: no recorded changes for ${m.file}`);
+        return diffs.showApplied(d.file, d.patch, d.status);
+      }
+      case 'permission':
+        await ctl.handle(m);
+        return diffs.close(m.id);
       default: return ctl.handle(m);
     }
   }
@@ -88,6 +115,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
       panel.post({ type: 'focus' });
     }),
     context,
+    diffs,
     vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration('openpane') && void start()),
     { dispose: () => { ctl.disconnect(); server?.stop(); } },
   );

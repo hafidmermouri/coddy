@@ -1,6 +1,6 @@
 import { createSignal, For, Match, onMount, Show, Switch } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import type { Block, Chip, Message, ToolCall, ToWebview, ViewState } from '../shared/protocol';
+import type { Block, Chip, Message, PermissionRequest, ToolCall, ToWebview, ViewState } from '../shared/protocol';
 import { emptySession } from '../shared/protocol';
 import { renderMarkdown } from './markdown';
 import { send } from './vscode';
@@ -37,6 +37,15 @@ export function App() {
           <div class="error">{state.session.error}</div>
         </Show>
       </div>
+      <Show when={state.session.changedFiles.length}>
+        <details class="changed">
+          <summary>{state.session.changedFiles.length} file(s) changed</summary>
+          <For each={state.session.changedFiles}>
+            {(f) => <button class="link" title="Show agent changes" onClick={() => send({ type: 'openChangedDiff', file: f })}>{f}</button>}
+          </For>
+        </details>
+      </Show>
+      <For each={state.session.permissions}>{(p) => <PermissionCard req={p} />}</For>
       <Composer busy={state.session.busy} chips={state.chips} ref={(el) => (input = el)} />
     </div>
   );
@@ -122,6 +131,38 @@ function ChipView(props: { chip: Chip }) {
       {props.chip.label}
       <button class="icon" title="Remove" onClick={() => send({ type: 'removeChip', id: props.chip.id })}>×</button>
     </span>
+  );
+}
+
+function PermissionCard(props: { req: PermissionRequest }) {
+  const reply = (decision: 'once' | 'always' | 'reject') => send({ type: 'permission', id: props.req.id, decision });
+  return (
+    <div class="permission">
+      <div class="head">Agent wants to <b>{props.req.action}</b></div>
+      <Show
+        when={props.req.files.length}
+        fallback={<div class="resources">{props.req.resources.join(', ')}</div>}
+      >
+        <For each={props.req.files}>
+          {(f) => (
+            <div class="pfile">
+              <button class="link" title="Review diff" onClick={() => send({ type: 'openPermissionDiff', id: props.req.id, file: f.file })}>
+                {f.file}
+              </button>
+              <span class="add">+{f.additions}</span>
+              <span class="del">-{f.deletions}</span>
+              <span class="muted">{f.status}</span>
+            </div>
+          )}
+        </For>
+      </Show>
+      <div class="actions">
+        <button class="primary" onClick={() => reply('once')}>Allow</button>
+        <button title="Allow this kind of request for the rest of the session" onClick={() => reply('always')}>Always</button>
+        <span class="spacer" />
+        <button onClick={() => reply('reject')}>Deny</button>
+      </div>
+    </div>
   );
 }
 

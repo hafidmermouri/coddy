@@ -4,7 +4,7 @@ import type { components, paths } from './generated/api';
 import { fromHistory, type HistoryMessage, isRecord, reduce, type ServerEvent } from './reducer';
 import { type Connection } from './server';
 import { EventStream } from './sse';
-import { emptySession, type FromWebview, type ServerStatus, type ViewState } from './shared/protocol';
+import { emptySession, type FromWebview, type PermissionDecision, type ServerStatus, type ViewState } from './shared/protocol';
 
 type Api = Client<paths>;
 type ModelRef = components['schemas']['Model.Ref'];
@@ -72,6 +72,7 @@ export class Controller {
         case 'send': return await this.send(msg.text);
         case 'interrupt': return await this.interrupt();
         case 'newSession': return this.newSession();
+        case 'permission': return await this.replyPermission(msg.id, msg.decision);
         default: return;
       }
     } catch (e) {
@@ -114,6 +115,27 @@ export class Controller {
     this.patchSession({ busy: true, error: undefined, messages: [...this.state.session.messages, user] });
     const res = await api.POST('/api/session/{sessionID}/prompt', { params: { path: { sessionID } }, body: { text: full } });
     if (res.error) throw new Error(`prompt failed: ${errorText(res.error)}`);
+  }
+
+  private async replyPermission(requestID: string, decision: PermissionDecision): Promise<void> {
+    const sessionID = this.state.session.id;
+    if (!sessionID) return;
+    const res = await this.requireApi().POST('/api/session/{sessionID}/permission/{requestID}/reply', {
+      params: { path: { sessionID, requestID } },
+      body: { decision },
+    });
+    if (res.error) throw new Error(`permission reply failed: ${errorText(res.error)}`);
+    // permission.replied will also arrive on the stream; drop it now so the card disappears immediately.
+    this.patchSession({ permissions: this.state.session.permissions.filter((p) => p.id !== requestID) });
+  }
+
+  /** Files changed by the agent in this session, with patches (GET /api/session/{id}/diff). */
+  async sessionDiff(): Promise<components['schemas']['FileDiff.Info'][]> {
+    const sessionID = this.state.session.id;
+    if (!sessionID) return [];
+    const res = await this.requireApi().GET('/api/session/{sessionID}/diff', { params: { path: { sessionID } } });
+    if (!res.data) throw new Error(`could not load session diff: ${errorText(res.error)}`);
+    return res.data.data;
   }
 
   private async interrupt(): Promise<void> {
