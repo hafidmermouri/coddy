@@ -16,3 +16,4 @@ internal/**
 *.vsix
 vite*.mts
 vitest.config.mts
+docs/**

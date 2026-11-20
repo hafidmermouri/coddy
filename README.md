@@ -1,5 +1,7 @@
 # Coddy
 
+![Coddy panel in VS Code](docs/coddy-panel.png)
+
 A code-agent console for [opencode](https://opencode.ai) inside VS Code. It is a thin client: it spawns your existing `opencode` binary as `opencode serve` on `127.0.0.1` and talks to its v2 HTTP API and event stream. Your opencode config (`opencode.json`, providers, OpenRouter routing) is used as-is.
 
 It is for code work in the open workspace only:
