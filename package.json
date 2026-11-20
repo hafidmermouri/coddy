@@ -1,15 +1,19 @@
 {
-  "name": "openpane",
-  "displayName": "OpenPane",
+  "name": "coddy",
+  "displayName": "Coddy",
   "description": "Code-agent console for opencode inside VS Code",
   "version": "0.2.1",
-  "publisher": "local",
+  "icon": "media/icon.png",
+  "publisher": "hafidmermouri",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "local"
+    "url": "https://github.com/hafidmermouri/coddy.git"
   },
-  "private": true,
+  "bugs": {
+    "url": "https://github.com/hafidmermouri/coddy/issues"
+  },
+  "homepage": "https://github.com/hafidmermouri/coddy#readme",
   "engines": {
     "vscode": "^1.106.0"
   },
@@ -24,60 +28,74 @@
     "viewsContainers": {
       "secondarySidebar": [
         {
-          "id": "openpane",
-          "title": "OpenPane",
+          "id": "coddy",
+          "title": "Coddy",
+          "icon": "media/icon.svg"
+        }
+      ],
+      "activitybar": [
+        {
+          "id": "coddy-usage",
+          "title": "Coddy",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "openpane": [
+      "coddy": [
         {
           "type": "webview",
-          "id": "openpane.chat",
+          "id": "coddy.chat",
           "name": "Agent"
+        }
+      ],
+      "coddy-usage": [
+        {
+          "type": "webview",
+          "id": "coddy.usage",
+          "name": "Usage"
         }
       ]
     },
     "commands": [
       {
-        "command": "openpane.open",
-        "title": "Open OpenPane",
-        "category": "OpenPane",
+        "command": "coddy.open",
+        "title": "Open Coddy",
+        "category": "Coddy",
         "icon": {
           "light": "media/icon-light.svg",
           "dark": "media/icon.svg"
         }
       },
       {
-        "command": "openpane.newTab",
+        "command": "coddy.newTab",
         "title": "New session in tab",
-        "category": "OpenPane"
+        "category": "Coddy"
       },
       {
-        "command": "openpane.askAboutSelection",
+        "command": "coddy.askAboutSelection",
         "title": "Ask about selection",
-        "category": "OpenPane"
+        "category": "Coddy"
       },
       {
-        "command": "openpane.attachDiagnostics",
+        "command": "coddy.attachDiagnostics",
         "title": "Attach diagnostics for current file",
-        "category": "OpenPane"
+        "category": "Coddy"
       },
       {
-        "command": "openpane.newSession",
+        "command": "coddy.newSession",
         "title": "New session",
-        "category": "OpenPane"
+        "category": "Coddy"
       },
       {
-        "command": "openpane.restartServer",
+        "command": "coddy.restartServer",
         "title": "Restart server",
-        "category": "OpenPane"
+        "category": "Coddy"
       }
     ],
     "keybindings": [
       {
-        "command": "openpane.askAboutSelection",
+        "command": "coddy.askAboutSelection",
         "key": "ctrl+alt+l",
         "mac": "cmd+alt+l",
         "when": "editorTextFocus"
@@ -86,27 +104,27 @@
     "menus": {
       "editor/context": [
         {
-          "command": "openpane.askAboutSelection",
+          "command": "coddy.askAboutSelection",
           "when": "editorHasSelection",
           "group": "navigation@9"
         }
       ],
       "editor/title": [
         {
-          "command": "openpane.open",
+          "command": "coddy.open",
           "group": "navigation"
         }
       ]
     },
     "configuration": {
-      "title": "OpenPane",
+      "title": "Coddy",
       "properties": {
-        "openpane.binaryPath": {
+        "coddy.binaryPath": {
           "type": "string",
           "default": "opencode",
           "description": "Path to the opencode binary. Used to spawn `opencode serve`."
         },
-        "openpane.serverUrl": {
+        "coddy.serverUrl": {
           "type": "string",
           "default": "",
           "description": "Use an already running opencode server instead of spawning one, e.g. http://opencode:PASSWORD@127.0.0.1:4096"

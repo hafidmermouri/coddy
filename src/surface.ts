@@ -6,7 +6,6 @@ import { type ContextTracker, pickWorkspaceFile } from './context';
 import { type ChatState, Controller, type Prefs } from './controller';
 import type { DiffViewer } from './diff';
 import type { ChatWebview } from './panel';
-import { pickAgent, pickModel, pickSession, pickVariant } from './pickers';
 import type { Connection } from './server';
 import type { FromWebview, ServerStatus } from './shared/protocol';
 
@@ -50,7 +49,7 @@ export class Surface {
       render: (s) => this.render(key, s),
       prefs: this.shared.prefs,
       savePrefs: this.shared.savePrefs,
-      showError: (m) => void vscode.window.showErrorMessage(`OpenPane: ${m}`),
+      showError: (m) => void vscode.window.showErrorMessage(`Coddy: ${m}`),
       takeContext: () => context.take(),
     });
     this.tabs.set(key, ctl);
@@ -65,7 +64,7 @@ export class Surface {
   route(m: FromWebview): void {
     void this.handle(m).catch((e: unknown) => {
       this.shared.log(`error: ${String(e)}`);
-      void vscode.window.showErrorMessage(`OpenPane: ${e instanceof Error ? e.message : String(e)}`);
+      void vscode.window.showErrorMessage(`Coddy: ${e instanceof Error ? e.message : String(e)}`);
     });
   }
 
@@ -107,10 +106,8 @@ export class Surface {
       }
       case 'removeChip': return context.remove(m.id);
       case 'attachDiagnostics': return this.shared.attachDiagnostics();
-      case 'pickModel': return pickModel(ctl);
-      case 'pickVariant': return pickVariant(ctl);
-      case 'pickAgent': return pickAgent(ctl);
-      case 'pickSession': return pickSession(ctl);
+      case 'menu': return this.view.post({ type: 'menu', kind: m.kind, items: await ctl.menu(m.kind) });
+      case 'pick': return ctl.pick(m.kind, m.key);
       case 'mention': {
         const file = await pickWorkspaceFile();
         return this.view.post(file ? { type: 'insert', text: `@${file} ` } : { type: 'focus' });
@@ -125,7 +122,7 @@ export class Surface {
       }
       case 'openChangedDiff': {
         const d = (await ctl.sessionDiff()).find((x) => x.file === m.file || m.file.endsWith(x.file));
-        if (!d) return void vscode.window.showInformationMessage(`OpenPane: no recorded changes for ${m.file}`);
+        if (!d) return void vscode.window.showInformationMessage(`Coddy: no recorded changes for ${m.file}`);
         return diffs.showApplied(d.file, d.patch, d.status);
       }
       case 'permission':

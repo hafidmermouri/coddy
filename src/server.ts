@@ -80,7 +80,7 @@ export class ServerManager {
     this.stopping = false;
     this.opts.log(`spawning ${bin} ${SERVE_ARGS.join(' ')} (cwd ${this.opts.cwd})`);
     const posix = process.platform !== 'win32';
-    const child = spawn(posix ? '/bin/sh' : bin, posix ? ['-c', WATCHDOG, 'openpane-watchdog', bin, ...SERVE_ARGS] : SERVE_ARGS, {
+    const child = spawn(posix ? '/bin/sh' : bin, posix ? ['-c', WATCHDOG, 'coddy-watchdog', bin, ...SERVE_ARGS] : SERVE_ARGS, {
       cwd: this.opts.cwd,
       env: { ...process.env, OPENCODE_SERVER_PASSWORD: password },
       stdio: [posix ? 'pipe' : 'ignore', 'pipe', 'pipe'],
@@ -114,14 +114,14 @@ export class ServerManager {
       child.on('error', (err: NodeJS.ErrnoException) => {
         clearTimeout(timer);
         reject(err.code === 'ENOENT'
-          ? new BinaryNotFoundError(`opencode binary not found: "${bin}". Set openpane.binaryPath.`)
+          ? new BinaryNotFoundError(`opencode binary not found: "${bin}". Set coddy.binaryPath.`)
           : err);
       });
       child.on('exit', (code, signal) => {
         clearTimeout(timer);
         const msg = `opencode serve exited (code ${code}, signal ${signal})${tail.length ? ': ' + tail.slice(-3).join(' | ') : ''}`;
         this.opts.log(msg);
-        if (!ready) reject(code === 127 ? new BinaryNotFoundError(`opencode binary not found: "${bin}". Set openpane.binaryPath.`) : new Error(msg));
+        if (!ready) reject(code === 127 ? new BinaryNotFoundError(`opencode binary not found: "${bin}". Set coddy.binaryPath.`) : new Error(msg));
         else if (!this.stopping) this.opts.onExit(msg);
       });
     });
@@ -134,7 +134,7 @@ export class ServerManager {
   }
 }
 
-/** openpane.serverUrl may carry credentials: http://user:pass@host:port */
+/** coddy.serverUrl may carry credentials: http://user:pass@host:port */
 function fromUrl(raw: string): Connection {
   const u = new URL(raw);
   const headers: Record<string, string> = {};

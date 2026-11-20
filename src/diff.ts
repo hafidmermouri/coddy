@@ -5,7 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import * as vscode from 'vscode';
 import { applyPatch } from './patch';
 
-const SCHEME = 'openpane';
+const SCHEME = 'coddy';
 
 export class DiffViewer implements vscode.TextDocumentContentProvider, vscode.Disposable {
   private readonly docs = new Map<string, string>();

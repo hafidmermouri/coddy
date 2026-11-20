@@ -1,7 +1,7 @@
-import { createSignal, For, Match, onMount, Show, Switch } from 'solid-js';
+import { createSignal, createUniqueId, For, type JSX, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import type { Block, Chip, ImageAttachment, Message, PermissionRequest, ToolCall, ToWebview, Usage, ViewState } from '../shared/protocol';
-import { emptySession } from '../shared/protocol';
+import type { Block, Chip, ImageAttachment, MenuItem, MenuKind, Message, PermissionRequest, ToolCall, ToWebview, Usage, ViewState } from '../shared/protocol';
+import { effortLabel, emptySession } from '../shared/protocol';
 import { renderMarkdown } from './markdown';
 import { send } from './vscode';
 
@@ -30,7 +30,7 @@ export function App() {
             {(t) => (
               <div class="tab" classList={{ active: t.key === state.activeTab }} title={t.title}>
                 <button class="tab-title" onClick={() => send({ type: 'selectTab', key: t.key })}>
-                  <Show when={t.busy}><span class="dot" /></Show>
+                  <Show when={t.busy} fallback={<Logo />}><span class="dot" /></Show>
                   {t.title}
                 </button>
                 <button class="icon" title="Close tab" onClick={() => send({ type: 'closeTab', key: t.key })}>×</button>
@@ -39,12 +39,15 @@ export function App() {
           </For>
         </div>
         <button class="icon" title="New session tab" onClick={() => send({ type: 'newTab' })}>+</button>
-        <button class="icon" title="Resume a session in this tab" onClick={() => send({ type: 'pickSession' })}>☰</button>
+        <MenuButton kind="session" down title="Session history" label={<svg class="clock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 8a5.4 5.4 0 1 0 1.7-3.9" /><path d="M2.4 2.4v2.8h2.8" /><path d="M8 5v3.2l2.1 1.3" /></svg>} />
       </header>
       <Show when={state.server.kind !== 'connected'}>
         <div class={`banner ${state.server.kind}`}>{serverText(state.server)}</div>
       </Show>
       <div class="messages" ref={list}>
+        <Show when={!state.session.messages.length && !state.session.error}>
+          <Welcome agent={state.agent} model={state.model} variant={state.variant} />
+        </Show>
         <For each={state.session.messages}>{(m) => <MessageView msg={m} />}</For>
         <Show when={state.session.error}>
           <div class="error">{state.session.error}</div>
@@ -62,6 +65,56 @@ export function App() {
       <Composer busy={state.session.busy} chips={state.chips} model={state.model} variant={state.variant} agent={state.agent} ref={(el) => (input = el)} />
       <UsageBar usage={state.session.usage} />
     </div>
+  );
+}
+
+const AGENTS = [
+  { id: 'build', label: 'Build', hint: 'Can edit files and run commands' },
+  { id: 'plan', label: 'Plan', hint: 'Read-only: explores and proposes a plan' },
+];
+
+/** Shown in an empty session. Everything is optional: just type a question below to ignore it. */
+function Welcome(props: { agent?: string; model?: string; variant?: string }) {
+  const current = () => (props.agent ?? '').toLowerCase();
+  return (
+    <div class="welcome">
+      <Logo />
+      <h2>What can I help with?</h2>
+      <div class="muted">Type a question below, or set things up first.</div>
+      <div class="welcome-row">
+        <span class="muted">Mode</span>
+        <div class="seg">
+          <For each={AGENTS}>
+            {(a) => (
+              <button classList={{ active: current() === a.id }} title={a.hint} onClick={() => send({ type: 'pick', kind: 'agent', key: a.id })}>
+                {a.label}
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
+      <div class="welcome-row">
+        <span class="muted">Model</span>
+        <button class="picker badge" title="Change model and effort" onClick={() => send({ type: 'menu', kind: 'model' })}>
+          {[props.model ?? 'model', props.variant && effortLabel(props.variant)].filter(Boolean).join(' - ')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Same mark as media/icon.svg, drawn in the current text color. */
+function Logo() {
+  const id = createUniqueId();
+  return (
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+      <mask id={id}>
+        <rect width="24" height="24" fill="#fff" />
+        <path d="M7 8l3.5 3.5L7 15" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M12.5 15h4.5" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" />
+      </mask>
+      <path mask={`url(#${id})`} fill="currentColor" d="M5.5 2h13A4.5 4.5 0 0 1 23 6.5v8a4.5 4.5 0 0 1-4.5 4.5H12l-5 3.5V19h-1.5A4.5 4.5 0 0 1 1 14.5v-8A4.5 4.5 0 0 1 5.5 2z" />
+    </svg>
   );
 }
 
@@ -85,7 +138,7 @@ function MessageView(props: { msg: Message }) {
               <Show when={parsed().labels.length + (m().images?.length ?? 0)}>
                 <div class="chips">
                   <For each={parsed().labels}>{(l) => <span class="chip static">{l}</span>}</For>
-                  <For each={m().images}>{(n) => <span class="chip static">🖼 {n}</span>}</For>
+                  <For each={m().images}>{(n) => <span class="chip static">📎 {n}</span>}</For>
                 </div>
               </Show>
               {parsed().text}
@@ -248,26 +301,92 @@ function ToolCard(props: { tool: ToolCall }) {
   );
 }
 
-/** Reads pasted clipboard images as data: URIs. */
-async function pastedImages(e: ClipboardEvent): Promise<ImageAttachment[]> {
-  const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
-  if (files.length) e.preventDefault();
-  return Promise.all(
-    files.map(
-      (f, i) =>
-        new Promise<ImageAttachment>((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = () => resolve({ name: f.name && f.name !== 'image.png' ? f.name : `pasted-${Date.now()}-${i}.png`, dataUrl: String(r.result) });
-          r.onerror = () => reject(r.error);
-          r.readAsDataURL(f);
-        }),
-    ),
+const readFile = (f: File, i: number): Promise<ImageAttachment> =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve({ name: f.name && f.name !== 'image.png' ? f.name : `pasted-${Date.now()}-${i}.png`, dataUrl: String(r.result) });
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(f);
+  });
+
+const TOP_USED = 10;
+
+/** Filterable list. The model list shows only the top most-used entries until you type a filter. */
+function MenuList(props: { items: MenuItem[]; search?: string; top?: number; detail?: boolean; class?: string; onPick: (key: string) => void; onClose: () => void }) {
+  const [filter, setFilter] = createSignal('');
+  const shown = () => {
+    const q = filter().toLowerCase();
+    if (q) return props.items.filter((i) => `${i.label} ${i.detail ?? ''}`.toLowerCase().includes(q)).slice(0, 50);
+    return props.top ? props.items.slice(0, props.top) : props.items;
+  };
+  return (
+    <div class={`menu ${props.class ?? ''}`} onKeyDown={(e) => e.key === 'Escape' && props.onClose()}>
+      <Show when={props.search}>
+        <input class="menu-filter" placeholder={props.search} ref={(el) => queueMicrotask(() => el.focus())} value={filter()} onInput={(e) => setFilter(e.currentTarget.value)} />
+      </Show>
+      <For each={shown()} fallback={<div class="muted menu-empty">No match</div>}>
+        {(i) => (
+          <button class="menu-item" classList={{ active: i.active }} title={i.detail} onClick={() => props.onPick(i.key)}>
+            <span class="check">{i.active ? '✓' : ''}</span>
+            <span class="menu-text">
+              <span class="menu-label">{i.label}</span>
+              <Show when={props.detail && i.detail}><span class="muted menu-detail">{i.detail}</span></Show>
+            </span>
+          </button>
+        )}
+      </For>
+    </div>
+  );
+}
+
+/** Receives the extension's answer to a `menu` request of this kind. */
+function useMenu(kind: MenuKind) {
+  const [items, setItems] = createSignal<MenuItem[]>();
+  onMount(() => {
+    const onMsg = (e: MessageEvent<ToWebview>) => e.data?.type === 'menu' && e.data.kind === kind && setItems(e.data.items);
+    const onDown = (e: MouseEvent) => !(e.target as Element).closest?.(`.menu-wrap.${kind}`) && setItems(undefined);
+    window.addEventListener('message', onMsg);
+    window.addEventListener('mousedown', onDown);
+    onCleanup(() => {
+      window.removeEventListener('message', onMsg);
+      window.removeEventListener('mousedown', onDown);
+    });
+  });
+  return [items, () => setItems(undefined)] as const;
+}
+
+/** Button with a dropdown opening above it. */
+function MenuButton(props: { kind: 'agent' | 'model' | 'session'; label: JSX.Element; title: string; badge?: boolean; down?: boolean }) {
+  const [items, close] = useMenu(props.kind);
+  return (
+    <div class={`menu-wrap ${props.kind}`}>
+      <button class="picker" classList={{ badge: props.badge, icon: !props.badge }} title={props.title} onClick={() => (items() ? close() : send({ type: 'menu', kind: props.kind }))}>
+        {props.label}
+      </button>
+      <Show when={items()}>
+        {(list) => (
+          <MenuList
+            items={list()}
+            class={props.down ? 'down' : ''}
+            search={props.kind === 'model' ? 'Search all models...' : props.kind === 'session' ? 'Search sessions...' : undefined}
+            top={props.kind === 'model' ? TOP_USED : undefined}
+            detail
+            onPick={(key) => { send({ type: 'pick', kind: props.kind, key }); close(); }}
+            onClose={close}
+          />
+        )}
+      </Show>
+    </div>
   );
 }
 
 function Composer(props: { busy: boolean; chips: Chip[]; model?: string; variant?: string; agent?: string; ref: (el: HTMLTextAreaElement) => void }) {
   const [text, setText] = createSignal('');
   const [images, setImages] = createSignal<ImageAttachment[]>([]);
+  const [slash, closeSlash] = useMenu('slash');
+  let fileInput!: HTMLInputElement;
+  let textarea!: HTMLTextAreaElement;
+  const attach = async (files: File[]) => files.length && setImages([...images(), ...(await Promise.all(files.map(readFile)))]);
   const submit = () => {
     const t = text().trim();
     if (!t || props.busy) return;
@@ -284,26 +403,60 @@ function Composer(props: { busy: boolean; chips: Chip[]; model?: string; variant
         <div class="chips">
           <For each={images()}>
             {(img) => (
-              <span class="thumb" title={img.name}>
-                <img src={img.dataUrl} alt={img.name} />
-                <button class="icon" title="Remove image" onClick={() => setImages(images().filter((x) => x !== img))}>×</button>
-              </span>
+              <Show
+                when={img.dataUrl.startsWith('data:image/')}
+                fallback={
+                  <span class="chip" title={img.name}>
+                    📎 {img.name}
+                    <button class="icon" title="Remove file" onClick={() => setImages(images().filter((x) => x !== img))}>×</button>
+                  </span>
+                }
+              >
+                <span class="thumb" title={img.name}>
+                  <img src={img.dataUrl} alt={img.name} />
+                  <button class="icon" title="Remove image" onClick={() => setImages(images().filter((x) => x !== img))}>×</button>
+                </span>
+              </Show>
             )}
           </For>
         </div>
       </Show>
+      <div class="menu-wrap slash">
+        <Show when={slash()}>
+          {(list) => (
+            <MenuList
+              class="left"
+              items={list()}
+              search="Search commands and skills..."
+              detail
+              onClose={() => { closeSlash(); insertAtCursor(textarea, '/'); }}
+              onPick={(name) => { closeSlash(); insertAtCursor(textarea, `/${name} `); }}
+            />
+          )}
+        </Show>
+      </div>
       <textarea
-        ref={props.ref}
+        ref={(el) => { textarea = el; props.ref(el); }}
         rows={3}
-        placeholder="Ask the agent about this workspace (Enter to send, Shift+Enter for newline)"
+        placeholder="Ask the agent about this workspace (/ for commands and skills, Enter to send, Shift+Enter for newline)"
         value={text()}
         onInput={(e) => setText(e.currentTarget.value)}
-        onPaste={(e) => void pastedImages(e).then((imgs) => imgs.length && setImages([...images(), ...imgs]))}
+        onPaste={(e) => {
+          const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+          if (!files.length) return;
+          e.preventDefault();
+          void attach(files);
+        }}
         onKeyDown={(e) => {
           const el = e.currentTarget;
           if (e.key === '@' && /(^|\s)$/.test(el.value.slice(0, el.selectionStart))) {
             e.preventDefault();
             send({ type: 'mention' });
+            return;
+          }
+          if (e.key === '/' && /(^|\s)$/.test(el.value.slice(0, el.selectionStart))) {
+            e.preventDefault();
+            send({ type: 'menu', kind: 'slash' });
             return;
           }
           if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -314,16 +467,23 @@ function Composer(props: { busy: boolean; chips: Chip[]; model?: string; variant
       />
       <div class="actions">
         <button class="icon" title="Mention a file (@)" onClick={() => send({ type: 'mention' })}>@</button>
+        <button class="icon" title="Attach files (images, PDF, ...)" onClick={() => fileInput.click()}>+</button>
+        <input ref={fileInput} type="file" multiple hidden onChange={(e) => { void attach([...(e.currentTarget.files ?? [])]); e.currentTarget.value = ''; }} />
         <button class="icon" title="Attach problems (diagnostics) of the current file" onClick={() => send({ type: 'attachDiagnostics' })}>⚠</button>
         <span class="spacer" />
-        <button class="icon picker" title="Agent" onClick={() => send({ type: 'pickAgent' })}>{props.agent ?? 'agent'}</button>
-        <button class="icon picker" title="Model" onClick={() => send({ type: 'pickModel' })}>{props.model ?? 'model'}</button>
-        <button class="icon picker" title="Effort (model variant)" onClick={() => send({ type: 'pickVariant' })}>{props.variant ?? 'effort'}</button>
+        <MenuButton kind="agent" label={props.agent ?? 'agent'} title="Agent (build / plan)" />
+        <MenuButton kind="model" label={[props.model ?? 'model', props.variant && effortLabel(props.variant)].filter(Boolean).join(' - ')} title="Model and effort" badge />
         <Show
           when={props.busy}
-          fallback={<button class="primary" disabled={!text().trim()} onClick={submit}>Send</button>}
+          fallback={
+            <button class="send" title="Send" aria-label="Send" disabled={!text().trim()} onClick={submit}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></svg>
+            </button>
+          }
         >
-          <button class="danger" onClick={() => send({ type: 'interrupt' })}>Stop</button>
+          <button class="stop" title="Stop" aria-label="Stop" onClick={() => send({ type: 'interrupt' })}>
+            <svg viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5" /></svg>
+          </button>
         </Show>
       </div>
     </div>

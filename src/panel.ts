@@ -8,7 +8,7 @@ export interface ChatWebview {
   post(msg: ToWebview): void;
 }
 
-export function setupWebview(webview: vscode.Webview, extensionUri: vscode.Uri, onMessage: (m: FromWebview) => void): vscode.Disposable {
+export function setupWebview<M = FromWebview>(webview: vscode.Webview, extensionUri: vscode.Uri, onMessage: (m: M) => void, view: 'chat' | 'usage' = 'chat'): vscode.Disposable {
   const dist = vscode.Uri.joinPath(extensionUri, 'dist');
   webview.options = { enableScripts: true, localResourceRoots: [dist] };
   const nonce = randomBytes(16).toString('base64');
@@ -26,8 +26,8 @@ export function setupWebview(webview: vscode.Webview, extensionUri: vscode.Uri, 
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="${css}"></head>
-<body><div id="root"></div><script nonce="${nonce}" src="${js}"></script></body></html>`;
-  return webview.onDidReceiveMessage((m: FromWebview) => onMessage(m));
+<body data-view="${view}"><div id="root"></div><script nonce="${nonce}" src="${js}"></script></body></html>`;
+  return webview.onDidReceiveMessage((m: M) => onMessage(m));
 }
 
 /** The sidebar view. VS Code creates its webview lazily, so messages before that are dropped. */
@@ -50,6 +50,6 @@ export class SidebarView implements vscode.WebviewViewProvider, ChatWebview {
   }
 
   async reveal(): Promise<void> {
-    await vscode.commands.executeCommand('openpane.chat.focus');
+    await vscode.commands.executeCommand('coddy.chat.focus');
   }
 }

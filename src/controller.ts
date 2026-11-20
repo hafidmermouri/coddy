@@ -4,15 +4,16 @@ import createClient, { type Client } from 'openapi-fetch';
 import type { components, paths } from './generated/api';
 import { fromHistory, type HistoryMessage, isRecord, reduce, type ServerEvent, toPermission, totals } from './reducer';
 import { type Connection } from './server';
-import { emptySession, type FromWebview, type ImageAttachment, type PermissionDecision, type ServerStatus, type ViewState } from './shared/protocol';
+import { effortLabel, emptySession, type FromWebview, type MenuItem, type MenuKind, type ImageAttachment, type PermissionDecision, type ServerStatus, type ViewState } from './shared/protocol';
 
 type Api = Client<paths>;
 type ModelRef = components['schemas']['Model.Ref'];
 export type ModelInfo = components['schemas']['Model.Info'];
 export type AgentInfo = components['schemas']['Agent.Info'];
 export type SessionInfo = components['schemas']['Session.Info'];
+export type SlashItem = { kind: 'command'; name: string; description?: string } | { kind: 'skill'; name: string; id: string; description?: string };
 
-/** OpenPane sessions always ask before editing, so every edit goes through the diff review. */
+/** Coddy sessions always ask before editing, so every edit goes through the diff review. */
 const SESSION_PERMISSIONS: components['schemas']['Permission.Ruleset'] = [
   { action: 'edit', resource: '*', effect: 'ask' },
 ];
@@ -21,7 +22,11 @@ const SESSION_PERMISSIONS: components['schemas']['Permission.Ruleset'] = [
 export interface Prefs {
   model?: ModelRef & { name: string };
   agent?: { id: string; name: string };
+  /** Pick counts per model/effort combo, to list the most used first. */
+  usage?: Record<string, number>;
 }
+
+const usageKey = (providerID: string, id: string, variant?: string) => `${providerID}/${id}/${variant ?? ''}`;
 
 /** What one controller owns; the surface adds the tab list. */
 export type ChatState = Omit<ViewState, 'tabs' | 'activeTab'>;
@@ -79,6 +84,17 @@ export class Controller {
     return res.data.data.filter((a) => a.mode !== 'subagent' && !a.hidden);
   }
 
+  /** Slash entries: server commands and skills, both invoked as `/name`. */
+  async listSlash(): Promise<SlashItem[]> {
+    const api = this.requireApi();
+    const query = { location: this.location };
+    const [cmds, skills] = await Promise.all([api.GET('/api/command', { params: { query } }), api.GET('/api/skill', { params: { query } })]);
+    return [
+      ...(cmds.data?.data ?? []).map((c) => ({ kind: 'command' as const, name: c.name, description: c.description })),
+      ...(skills.data?.data ?? []).map((s) => ({ kind: 'skill' as const, name: s.name, id: s.id, description: s.description })),
+    ];
+  }
+
   /** Top-level sessions for this workspace folder, newest first. */
   async listSessions(): Promise<SessionInfo[]> {
     const res = await this.requireApi().GET('/api/session', {
@@ -88,23 +104,63 @@ export class Controller {
     return res.data.data.filter((s) => !s.parentID);
   }
 
-  /** The model this tab uses: its own choice, else the server default. */
-  async currentModel(): Promise<ModelInfo | undefined> {
-    if (!this.model) return this.defaultModel;
-    const { id, providerID } = this.model;
-    return (await this.listModels()).find((m) => m.id === id && m.providerID === providerID);
+  /** Model/effort combos, most used first; filtering and the top-10 cut happen in the webview. */
+  async menu(kind: MenuKind): Promise<MenuItem[]> {
+    if (kind === 'slash') {
+      return (await this.listSlash()).map((s) => ({ key: s.name, label: `/${s.name}`, detail: s.description ?? s.kind, active: false }));
+    }
+    if (kind === 'session') {
+      const sessions = await this.listSessions();
+      return [
+        { key: '', label: 'New session', active: false },
+        ...sessions.map((s) => ({ key: s.id, label: s.title || s.id, detail: new Date(s.time.updated).toLocaleString(), active: s.id === this.state.session.id })),
+      ];
+    }
+    if (kind === 'agent') {
+      return (await this.listAgents()).map((a) => ({ key: a.id, label: a.name, detail: a.description, active: a.id === this.agent?.id || a.name === this.agent?.name }));
+    }
+    // Counts from picks made here, plus the models of earlier sessions so favorites show up from day one.
+    const usage = { ...this.host.prefs().usage };
+    for (const s of await this.listSessions().catch(() => [])) {
+      if (!s.model) continue;
+      const k = usageKey(s.model.providerID, s.model.id, s.model.variant ?? undefined);
+      usage[k] = (usage[k] ?? 0) + 1;
+    }
+    const cur = this.model ?? this.defaultModel;
+    const items = (await this.listModels()).flatMap((m) =>
+      [undefined, ...m.variants.map((v) => v.id)].map((variant) => {
+        const uses = usage[usageKey(m.providerID, m.id, variant)] ?? 0;
+        return {
+          uses,
+          item: {
+            key: JSON.stringify([m.providerID, m.id, variant ?? null, m.name]),
+            label: variant ? `${m.name} - ${effortLabel(variant)}` : m.name,
+            detail: m.providerID,
+            active: cur?.id === m.id && cur.providerID === m.providerID && (this.model?.variant ?? undefined) === variant,
+          },
+        };
+      }),
+    );
+    return items.sort((x, y) => y.uses - x.uses).map((x) => x.item);
   }
 
-  async setModel(model: ModelInfo): Promise<void> {
-    // Keep the chosen effort if the new model supports it.
-    const variant = model.variants.some((v) => v.id === this.model?.variant) ? this.model?.variant : undefined;
-    await this.applyModel({ id: model.id, providerID: model.providerID, variant, name: model.name });
-  }
-
-  async setVariant(variant: string | undefined): Promise<void> {
-    const base = this.model ?? (this.defaultModel && { id: this.defaultModel.id, providerID: this.defaultModel.providerID, name: this.defaultModel.name });
-    if (!base) throw new Error('no model to set the effort on');
-    await this.applyModel({ ...base, variant });
+  async pick(kind: MenuKind, key: string): Promise<void> {
+    if (kind === 'slash') return;
+    if (kind === 'session') {
+      if (key) await this.resume(key);
+      else this.newSession();
+      return;
+    }
+    if (kind === 'agent') {
+      const agent = (await this.listAgents()).find((a) => a.id === key);
+      if (agent) await this.setAgent(agent);
+      return;
+    }
+    const [providerID, id, variant, name] = JSON.parse(key) as [string, string, string | null, string];
+    const prefs = this.host.prefs();
+    const k = usageKey(providerID, id, variant ?? undefined);
+    this.host.savePrefs({ ...prefs, usage: { ...prefs.usage, [k]: (prefs.usage?.[k] ?? 0) + 1 } });
+    await this.applyModel({ id, providerID, variant: variant ?? undefined, name });
   }
 
   private async applyModel(model: NonNullable<Prefs['model']>): Promise<void> {
@@ -185,7 +241,11 @@ export class Controller {
     if (!history.data) throw new Error(`could not load session ${id}: ${errorText(history.error)}`);
     // openapi-fetch rewrites empty-object schemas ({} vs Record<string, never>); the payload is the spec type.
     const meta = info.data?.data;
-    if (meta?.model) this.model = { ...meta.model, name: `${meta.model.providerID}/${meta.model.id}` };
+    if (meta?.model) {
+      const { id, providerID } = meta.model;
+      const found = (await this.listModels().catch(() => [])).find((m) => m.id === id && m.providerID === providerID);
+      this.model = { ...meta.model, name: found?.name ?? id };
+    }
     if (meta?.agent) this.agent = { id: meta.agent, name: meta.agent };
     // The API caps a page at 200 messages: load the newest page and show it oldest-first.
     const base = fromHistory(id, meta?.title, (history.data.data as HistoryMessage[]).slice().reverse());
@@ -213,7 +273,18 @@ export class Controller {
     this.patchSession({ busy: true, error: undefined, messages: [...this.state.session.messages, user] });
     // Pasted images go inline as data: URIs (verified against opencode 2.3.0).
     const files = images.map((i) => ({ uri: i.dataUrl, name: i.name, source: { type: 'inline' as const } }));
-    const res = await api.POST('/api/session/{sessionID}/prompt', { params: { path: { sessionID } }, body: { text: full, files } });
+    const tokens = [...text.matchAll(/(?:^|\s)\/(\S+)/g)].map((m) => m[1]);
+    const items = tokens.length ? await this.listSlash() : [];
+    const lead = /^\/(\S+)\s*([\s\S]*)$/.exec(text);
+    const cmd = lead && items.find((s) => s.kind === 'command' && s.name === lead[1]);
+    if (cmd && lead) {
+      const res = await api.POST('/api/session/{sessionID}/command', { params: { path: { sessionID } }, body: { name: cmd.name, text: lead[2] ?? '', files } });
+      if (res.error) throw new Error(`command failed: ${errorText(res.error)}`);
+      return;
+    }
+    const picked = items.flatMap((s) => (s.kind === 'skill' && tokens.includes(s.name) ? [{ id: s.id }] : []));
+    const skills = picked.length ? picked : undefined;
+    const res = await api.POST('/api/session/{sessionID}/prompt', { params: { path: { sessionID } }, body: { text: full, files, skills } });
     if (res.error) throw new Error(`prompt failed: ${errorText(res.error)}`);
   }
 

@@ -96,6 +96,18 @@ export interface ViewState {
   agent?: string;
 }
 
+export type MenuKind = 'agent' | 'model' | 'slash' | 'session';
+
+/** "medium" -> "Medium" */
+export const effortLabel = (v: string): string => v.charAt(0).toUpperCase() + v.slice(1);
+
+export interface MenuItem {
+  key: string;
+  label: string;
+  detail?: string;
+  active: boolean;
+}
+
 export type PermissionDecision = 'once' | 'always' | 'reject';
 
 export type FromWebview =
@@ -109,18 +121,17 @@ export type FromWebview =
   | { type: 'removeChip'; id: string }
   | { type: 'mention' }
   | { type: 'attachDiagnostics' }
-  | { type: 'pickModel' }
-  | { type: 'pickAgent' }
-  | { type: 'pickVariant' }
+  | { type: 'menu'; kind: MenuKind }
+  | { type: 'pick'; kind: MenuKind; key: string }
   | { type: 'selectTab'; key: string }
   | { type: 'closeTab'; key: string }
-  | { type: 'pickSession' }
   | { type: 'newSession' }
   | { type: 'newTab' };
 
 export type ToWebview =
   | { type: 'state'; state: ViewState }
   | { type: 'insert'; text: string }
+  | { type: 'menu'; kind: MenuKind; items: MenuItem[] }
   | { type: 'focus' };
 
 export const emptySession = (): SessionView => ({
@@ -130,3 +141,14 @@ export const emptySession = (): SessionView => ({
   changedFiles: [],
   usage: { input: 0, cached: 0, output: 0, cost: 0, context: 0 },
 });
+
+/** Usage dashboard (activity bar view). Costs are attributed to each session's creation time. */
+export interface UsageData {
+  totals: { input: number; cached: number; output: number; cost: number; sessions: number };
+  /** Newest-last; the last sessions with their final context size. */
+  sessions: { id: string; title: string; context: number }[];
+  costs: { t: number; cost: number }[];
+}
+
+export type UsageToWebview = { type: 'usage'; data?: UsageData; error?: string };
+export type UsageFromWebview = { type: 'refresh' };

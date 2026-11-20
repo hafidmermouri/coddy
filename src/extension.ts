@@ -7,17 +7,18 @@ import { BinaryNotFoundError, binaryVersion, type Connection, ServerManager } fr
 import type { ServerStatus } from './shared/protocol';
 import { EventStream } from './sse';
 import { Surface } from './surface';
+import { UsageView } from './usage';
 
 let server: ServerManager | undefined;
 let stream: EventStream | undefined;
 
-const PREFS_KEY = 'openpane.prefs';
+const PREFS_KEY = 'coddy.prefs';
 
 export function activate(ctx: vscode.ExtensionContext): void {
-  const out = vscode.window.createOutputChannel('OpenPane', { log: true });
+  const out = vscode.window.createOutputChannel('Coddy', { log: true });
   const log = (m: string) => out.info(m);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
-  status.command = 'openpane.chat.focus';
+  status.command = 'coddy.chat.focus';
   status.show();
 
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -28,7 +29,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const context = new ContextTracker((chips) => panel.controllers().forEach((c) => c.setChips(chips)));
   const diffs = new DiffViewer(cwd);
   const attachDiagnostics = () => {
-    if (!context.pinDiagnostics()) void vscode.window.showInformationMessage('OpenPane: open a file to attach its problems.');
+    if (!context.pinDiagnostics()) void vscode.window.showInformationMessage('Coddy: open a file to attach its problems.');
   };
   const sidebarView = new SidebarView(ctx.extensionUri, (m) => panel.route(m));
   const panel: Surface = new Surface({
@@ -56,8 +57,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
     conn = undefined;
     panel.controllers().forEach((c) => c.disconnect());
     setStatus({ kind: 'starting' });
-    if (!hasFolder) return setStatus({ kind: 'error', message: 'Open a folder to use OpenPane.' });
-    const cfg = vscode.workspace.getConfiguration('openpane');
+    if (!hasFolder) return setStatus({ kind: 'error', message: 'Open a folder to use Coddy.' });
+    const cfg = vscode.workspace.getConfiguration('coddy');
     const binaryPath = cfg.get<string>('binaryPath', 'opencode');
     const serverUrl = cfg.get<string>('serverUrl', '');
     server = new ServerManager({ binaryPath, serverUrl, cwd, log, onExit: (message) => setStatus({ kind: 'error', message }) });
@@ -84,8 +85,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
       log(`server start failed: ${message}`);
       setStatus({ kind: 'error', message });
       const action = e instanceof BinaryNotFoundError ? 'Open Settings' : 'Show Log';
-      const pick = await vscode.window.showErrorMessage(`OpenPane: ${message}`, action, 'Retry');
-      if (pick === 'Open Settings') void vscode.commands.executeCommand('workbench.action.openSettings', 'openpane.binaryPath');
+      const pick = await vscode.window.showErrorMessage(`Coddy: ${message}`, action, 'Retry');
+      if (pick === 'Open Settings') void vscode.commands.executeCommand('workbench.action.openSettings', 'coddy.binaryPath');
       if (pick === 'Show Log') out.show();
       if (pick === 'Retry') void start();
     }
@@ -96,24 +97,25 @@ export function activate(ctx: vscode.ExtensionContext): void {
     status,
     context,
     diffs,
-    vscode.window.registerWebviewViewProvider('openpane.chat', sidebarView, { webviewOptions: { retainContextWhenHidden: true } }),
-    vscode.commands.registerCommand('openpane.restartServer', start),
-    vscode.commands.registerCommand('openpane.open', () => sidebarView.reveal()),
-    vscode.commands.registerCommand('openpane.newTab', async () => {
+    vscode.window.registerWebviewViewProvider('coddy.usage', new UsageView(ctx.extensionUri, () => conn, cwd)),
+    vscode.window.registerWebviewViewProvider('coddy.chat', sidebarView, { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.commands.registerCommand('coddy.restartServer', start),
+    vscode.commands.registerCommand('coddy.open', () => sidebarView.reveal()),
+    vscode.commands.registerCommand('coddy.newTab', async () => {
       panel.newTab();
       await sidebarView.reveal();
     }),
-    vscode.commands.registerCommand('openpane.newSession', () => panel.activeController().newSession()),
-    vscode.commands.registerCommand('openpane.attachDiagnostics', async () => {
+    vscode.commands.registerCommand('coddy.newSession', () => panel.activeController().newSession()),
+    vscode.commands.registerCommand('coddy.attachDiagnostics', async () => {
       attachDiagnostics();
       await sidebarView.reveal();
     }),
-    vscode.commands.registerCommand('openpane.askAboutSelection', async () => {
-      if (!context.pinSelection()) return void vscode.window.showInformationMessage('OpenPane: select some code first.');
+    vscode.commands.registerCommand('coddy.askAboutSelection', async () => {
+      if (!context.pinSelection()) return void vscode.window.showInformationMessage('Coddy: select some code first.');
       await sidebarView.reveal();
       sidebarView.post({ type: 'focus' });
     }),
-    vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration('openpane') && void start()),
+    vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration('coddy') && void start()),
     { dispose: deactivate },
   );
   void start();
@@ -126,10 +128,10 @@ export function deactivate(): void {
 
 function showStatus(item: vscode.StatusBarItem, s: ServerStatus): void {
   const map: Record<ServerStatus['kind'], [string, string]> = {
-    starting: ['$(loading~spin) OpenPane', 'Starting opencode server'],
-    connected: ['$(check) OpenPane', 'Connected to opencode'],
-    reconnecting: ['$(sync~spin) OpenPane', 'Reconnecting to opencode event stream'],
-    error: ['$(error) OpenPane', 'opencode server error'],
+    starting: ['$(loading~spin) Coddy', 'Starting opencode server'],
+    connected: ['$(check) Coddy', 'Connected to opencode'],
+    reconnecting: ['$(sync~spin) Coddy', 'Reconnecting to opencode event stream'],
+    error: ['$(error) Coddy', 'opencode server error'],
   };
   const [text, tip] = map[s.kind];
   item.text = text;
@@ -146,7 +148,7 @@ async function checkVersion(binaryPath: string, log: (m: string) => void): Promi
     const actual = await binaryVersion(binaryPath);
     log(`opencode v${actual} (types generated for v${expected})`);
     if (actual !== expected) {
-      void vscode.window.showWarningMessage(`OpenPane: types generated for opencode v${expected}, running v${actual}. Some features may not work.`);
+      void vscode.window.showWarningMessage(`Coddy: types generated for opencode v${expected}, running v${actual}. Some features may not work.`);
     }
   } catch (e) {
     log(`version check skipped: ${String(e)}`);

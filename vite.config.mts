@@ -8,6 +8,6 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: false,
     sourcemap: false,
-    lib: { entry: 'src/webview/main.tsx', formats: ['iife'], name: 'openpane', fileName: () => 'webview.js', cssFileName: 'webview' },
+    lib: { entry: 'src/webview/main.tsx', formats: ['iife'], name: 'coddy', fileName: () => 'webview.js', cssFileName: 'webview' },
   },
 });

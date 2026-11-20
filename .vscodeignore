@@ -11,3 +11,8 @@ tsconfig*.json
 PROGRESS.md
 prompt.md
 *.mts
+PROGRESS.md
+internal/**
+*.vsix
+vite*.mts
+vitest.config.mts

@@ -1,11 +1,11 @@
-# OpenPane
+# Coddy
 
 A code-agent console for [opencode](https://opencode.ai) inside VS Code. It is a thin client: it spawns your existing `opencode` binary as `opencode serve` on `127.0.0.1` and talks to its v2 HTTP API and event stream. Your opencode config (`opencode.json`, providers, OpenRouter routing) is used as-is.
 
 It is for code work in the open workspace only:
 
 - Prompt, stream and interrupt the agent from a sidebar panel.
-- Editor context is attached automatically and can be removed: the active file and the current selection. "OpenPane: Ask about selection" (editor context menu, `Cmd+Alt+L` / `Ctrl+Alt+L`) pins a selection. `@` opens a workspace file picker.
+- Editor context is attached automatically and can be removed: the active file and the current selection. "Coddy: Ask about selection" (editor context menu, `Cmd+Alt+L` / `Ctrl+Alt+L`) pins a selection. `@` opens a workspace file picker.
 - "Attach diagnostics" sends the current file's Problems.
 - Tool calls (read, write, shell, grep...) appear as live, collapsible cards. File paths open in the editor.
 - Every edit asks first. The proposed change opens in VS Code's native diff, and you Allow, Always or Deny it. The "files changed" list opens a diff of what the agent changed in each file.
@@ -25,8 +25,8 @@ It is for code work in the open workspace only:
 
 ```sh
 npm install
-npm run package          # builds dist/ and writes openpane-<version>.vsix
-code --install-extension openpane-0.2.1.vsix
+npm run package          # builds dist/ and writes coddy-<version>.vsix
+code --install-extension coddy-0.2.1.vsix
 ```
 
 Or in VS Code: Extensions view, `...` menu, "Install from VSIX...".
@@ -37,15 +37,15 @@ Development: open this folder in VS Code and press F5 ("Run Extension").
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `openpane.binaryPath` | `opencode` | Binary to spawn. If it is left as `opencode` and that is not on the PATH VS Code sees, `~/.opencode/bin/opencode` is tried. |
-| `openpane.serverUrl` | empty | Use a running server instead of spawning one. Put credentials in the URL, e.g. `http://opencode:PASSWORD@127.0.0.1:4096`. |
+| `coddy.binaryPath` | `opencode` | Binary to spawn. If it is left as `opencode` and that is not on the PATH VS Code sees, `~/.opencode/bin/opencode` is tried. |
+| `coddy.serverUrl` | empty | Use a running server instead of spawning one. Put credentials in the URL, e.g. `http://opencode:PASSWORD@127.0.0.1:4096`. |
 
 ## How it works
 
 - `src/server.ts` spawns `opencode serve --port 0 --hostname 127.0.0.1` with a random `OPENCODE_SERVER_PASSWORD` per VS Code session, parses the listening URL from stdout, and sends basic auth on every request. The child process is killed on deactivate.
 - `src/sse.ts` reads `GET /api/event` with a streaming `fetch`. It reconnects with exponential backoff (0.5s up to 10s) and logs every retry. After a reconnect it refetches the open session, because events may have been missed.
 - `src/reducer.ts` is a pure function from events to UI state, unit-tested against recorded fixtures in `test/fixtures/`.
-- Sessions created by OpenPane carry the rule `edit -> ask`. Your `opencode.json` is not modified.
+- Sessions created by Coddy carry the rule `edit -> ask`. Your `opencode.json` is not modified.
 - Network traffic goes only to the local opencode server. There is no telemetry.
 
 ## Regenerating API types
