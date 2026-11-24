@@ -36,6 +36,31 @@ export interface PermissionRequest {
   files: PermissionFile[];
 }
 
+export type FormValue = string | number | boolean | string[];
+
+export interface FormField {
+  key: string;
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'multiselect' | 'external';
+  title?: string;
+  description?: string;
+  required?: boolean;
+  hidden?: boolean;
+  options?: { value: string; label: string; description?: string }[];
+  /** Allows a free-text answer besides the options. */
+  custom?: boolean;
+  placeholder?: string;
+  url?: string;
+  default?: FormValue;
+  when?: { key: string; op: 'eq' | 'neq'; value: string | number | boolean }[];
+}
+
+/** A question the agent asked (opencode "form"). */
+export interface FormRequest {
+  id: string;
+  title: string;
+  fields: FormField[];
+}
+
 export interface Usage {
   /** Session totals. input = fresh prompt tokens (incl. cache writes); cached = cache reads, billed far lower. */
   input: number;
@@ -52,6 +77,7 @@ export interface SessionView {
   busy: boolean;
   messages: Message[];
   permissions: PermissionRequest[];
+  forms: FormRequest[];
   changedFiles: string[];
   usage: Usage;
   error?: string;
@@ -115,6 +141,7 @@ export type FromWebview =
   | { type: 'send'; text: string; images: ImageAttachment[] }
   | { type: 'interrupt' }
   | { type: 'permission'; id: string; decision: PermissionDecision }
+  | { type: 'form'; id: string; answer: Record<string, FormValue> | null }
   | { type: 'openPermissionDiff'; id: string; file: string }
   | { type: 'openFile'; file: string }
   | { type: 'openChangedDiff'; file: string }
@@ -138,6 +165,7 @@ export const emptySession = (): SessionView => ({
   busy: false,
   messages: [],
   permissions: [],
+  forms: [],
   changedFiles: [],
   usage: { input: 0, cached: 0, output: 0, cost: 0, context: 0 },
 });

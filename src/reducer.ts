@@ -1,7 +1,7 @@
 // Pure reducer: opencode v2 events (GET /api/event) -> SessionView.
 // Events for other sessions and event types the UI does not show are ignored.
 import type { components, paths } from './generated/api';
-import type { Block, Message, PermissionFile, PermissionRequest, SessionView, ToolCall } from './shared/protocol';
+import type { Block, FormRequest, Message, PermissionFile, PermissionRequest, SessionView, ToolCall } from './shared/protocol';
 
 type S = components['schemas'];
 export type ServerEvent = S['V2Event'];
@@ -11,6 +11,11 @@ type ToolContent = S['Tool.Content'] | S['Tool.Content_1'];
 
 export function reduce(state: SessionView, ev: ServerEvent): SessionView {
   const data: unknown = ev.data;
+  if (ev.type === 'form.created') {
+    // The session id is nested under data.form, unlike other events.
+    if (!state.id || ev.data.form.sessionID !== state.id || state.forms.some((f) => f.id === ev.data.form.id)) return state;
+    return { ...state, forms: [...state.forms, toForm(ev.data.form)] };
+  }
   if (!state.id || !isRecord(data) || data.sessionID !== state.id) return state;
 
   switch (ev.type) {
@@ -19,7 +24,7 @@ export function reduce(state: SessionView, ev: ServerEvent): SessionView {
     case 'session.execution.succeeded':
       return { ...state, busy: false };
     case 'session.execution.interrupted':
-      return { ...state, busy: false, permissions: [] };
+      return { ...state, busy: false, permissions: [], forms: [] };
     case 'session.execution.failed':
       return { ...state, busy: false, error: ev.data.error.message };
     case 'session.renamed':
@@ -76,6 +81,9 @@ export function reduce(state: SessionView, ev: ServerEvent): SessionView {
     }
     case 'permission.replied':
       return { ...state, permissions: state.permissions.filter((p) => p.id !== ev.data.requestID) };
+    case 'form.replied':
+    case 'form.cancelled':
+      return { ...state, forms: state.forms.filter((f) => f.id !== ev.data.id) };
     default:
       return state;
   }
@@ -113,7 +121,7 @@ export function fromHistory(id: string, title: string | undefined, history: Hist
     });
     messages.push({ role: 'assistant', id: m.id, blocks, error: m.error?.message });
   }
-  return { id, title, busy: false, messages, permissions: [], changedFiles: [...changed], usage };
+  return { id, title, busy: false, messages, permissions: [], forms: [], changedFiles: [...changed], usage };
 }
 
 type Tokens = S['TokenUsage.Info'];
@@ -171,6 +179,10 @@ function updateTool(state: SessionView, mid: string, id: string, patch: Partial<
 
 function contentText(content: ToolContent[]): string {
   return content.map((c) => (c.type === 'text' ? c.text : `[file ${'uri' in c ? String(c.uri) : ''}]`)).join('\n');
+}
+
+export function toForm(f: { id: string; title: string; fields: readonly unknown[] }): FormRequest {
+  return { id: f.id, title: f.title, fields: f.fields as FormRequest['fields'] };
 }
 
 /** Shared by the permission.asked event and GET /api/session/{id}/permission (same Permission.Request shape). */

@@ -2,9 +2,9 @@
 // Events arrive from the shared stream in extension.ts via onEvent().
 import createClient, { type Client } from 'openapi-fetch';
 import type { components, paths } from './generated/api';
-import { fromHistory, type HistoryMessage, isRecord, reduce, type ServerEvent, toPermission, totals } from './reducer';
+import { fromHistory, type HistoryMessage, isRecord, reduce, type ServerEvent, toForm, toPermission, totals } from './reducer';
 import { type Connection } from './server';
-import { effortLabel, emptySession, type FromWebview, type MenuItem, type MenuKind, type ImageAttachment, type PermissionDecision, type ServerStatus, type ViewState } from './shared/protocol';
+import { effortLabel, emptySession, type FormValue, type FromWebview, type MenuItem, type MenuKind, type ImageAttachment, type PermissionDecision, type ServerStatus, type ViewState } from './shared/protocol';
 
 type Api = Client<paths>;
 type ModelRef = components['schemas']['Model.Ref'];
@@ -217,6 +217,7 @@ export class Controller {
         case 'send': return await this.send(msg.text, msg.images);
         case 'interrupt': return await this.interrupt();
         case 'newSession': return this.newSession();
+        case 'form': return await this.replyForm(msg.id, msg.answer);
         case 'permission': return await this.replyPermission(msg.id, msg.decision);
         default: return;
       }
@@ -233,10 +234,11 @@ export class Controller {
 
   async resume(id: string): Promise<void> {
     const api = this.requireApi();
-    const [info, history, perms] = await Promise.all([
+    const [info, history, perms, forms] = await Promise.all([
       api.GET('/api/session/{sessionID}', { params: { path: { sessionID: id } } }),
       api.GET('/api/session/{sessionID}/message', { params: { path: { sessionID: id }, query: { order: 'desc', limit: '200' } } }),
       api.GET('/api/session/{sessionID}/permission', { params: { path: { sessionID: id } } }),
+      api.GET('/api/session/{sessionID}/form', { params: { path: { sessionID: id } } }),
     ]);
     if (!history.data) throw new Error(`could not load session ${id}: ${errorText(history.error)}`);
     // openapi-fetch rewrites empty-object schemas ({} vs Record<string, never>); the payload is the spec type.
@@ -252,6 +254,7 @@ export class Controller {
     const session = {
       ...base,
       permissions: (perms.data?.data ?? []).map(toPermission),
+      forms: (forms.data?.data ?? []).map(toForm),
       // Session totals from the server also cover messages beyond the 200 loaded.
       usage: meta ? { ...base.usage, ...totals(meta.tokens, meta.cost) } : base.usage,
     };
@@ -286,6 +289,18 @@ export class Controller {
     const skills = picked.length ? picked : undefined;
     const res = await api.POST('/api/session/{sessionID}/prompt', { params: { path: { sessionID } }, body: { text: full, files, skills } });
     if (res.error) throw new Error(`prompt failed: ${errorText(res.error)}`);
+  }
+
+  /** answer === null cancels the question. */
+  private async replyForm(formID: string, answer: Record<string, FormValue> | null): Promise<void> {
+    const sessionID = this.state.session.id;
+    if (!sessionID) return;
+    const api = this.requireApi();
+    const res = answer
+      ? await api.POST('/api/session/{sessionID}/form/{formID}/reply', { params: { path: { sessionID, formID } }, body: { answer } })
+      : await api.DELETE('/api/session/{sessionID}/form/{formID}', { params: { path: { sessionID, formID } } });
+    if (res.error) throw new Error(`question reply failed: ${errorText(res.error)}`);
+    this.patchSession({ forms: this.state.session.forms.filter((f) => f.id !== formID) });
   }
 
   private async replyPermission(requestID: string, decision: PermissionDecision): Promise<void> {

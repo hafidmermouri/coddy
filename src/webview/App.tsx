@@ -1,6 +1,6 @@
 import { createSignal, createUniqueId, For, type JSX, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import type { Block, Chip, ImageAttachment, MenuItem, MenuKind, Message, PermissionRequest, ToolCall, ToWebview, Usage, ViewState } from '../shared/protocol';
+import type { Block, Chip, ImageAttachment, MenuItem, MenuKind, Message, FormField, FormRequest, FormValue, PermissionRequest, ToolCall, ToWebview, Usage, ViewState } from '../shared/protocol';
 import { effortLabel, emptySession } from '../shared/protocol';
 import { renderMarkdown } from './markdown';
 import { send } from './vscode';
@@ -61,6 +61,7 @@ export function App() {
           </For>
         </details>
       </Show>
+      <For each={state.session.forms}>{(f) => <FormCard form={f} />}</For>
       <For each={state.session.permissions}>{(p) => <PermissionCard req={p} />}</For>
       <Composer busy={state.session.busy} chips={state.chips} model={state.model} variant={state.variant} agent={state.agent} ref={(el) => (input = el)} />
       <UsageBar usage={state.session.usage} />
@@ -75,7 +76,7 @@ const AGENTS = [
 
 /** Shown in an empty session. Everything is optional: just type a question below to ignore it. */
 function Welcome(props: { agent?: string; model?: string; variant?: string }) {
-  const current = () => (props.agent ?? '').toLowerCase();
+  const current = () => (props.agent ?? 'build').toLowerCase();
   return (
     <div class="welcome">
       <Logo />
@@ -252,6 +253,114 @@ function PermissionCard(props: { req: PermissionRequest }) {
         <span class="spacer" />
         <button onClick={() => reply('reject')}>Deny</button>
       </div>
+    </div>
+  );
+}
+
+function FormCard(props: { form: FormRequest }) {
+  const [answer, setAnswer] = createStore<Record<string, FormValue | undefined>>(
+    Object.fromEntries(props.form.fields.filter((f) => f.default !== undefined).map((f) => [f.key, f.default])),
+  );
+  const visible = (f: FormField) =>
+    !f.hidden && (f.when ?? []).every((w) => (w.op === 'eq') === (answer[w.key] === w.value));
+  const missing = () =>
+    props.form.fields.some((f) => f.required && f.type !== 'external' && visible(f) && (answer[f.key] === undefined || answer[f.key] === ''));
+  const submit = () => {
+    const out: Record<string, FormValue> = {};
+    for (const f of props.form.fields) {
+      const v = answer[f.key];
+      if (visible(f) && v !== undefined && v !== '') out[f.key] = v;
+    }
+    send({ type: 'form', id: props.form.id, answer: out });
+  };
+  const shown = () => props.form.fields.filter(visible);
+  const [tab, setTab] = createSignal(0);
+  const idx = () => Math.min(tab(), shown().length - 1);
+  const done = (f: FormField) => answer[f.key] !== undefined && answer[f.key] !== '';
+  return (
+    <div class="form">
+      <div class="head">{props.form.title}</div>
+      <Show when={shown().length > 1}>
+        <div class="tabs" role="tablist">
+          <For each={shown()}>
+            {(f, i) => (
+              <button role="tab" classList={{ active: i() === idx(), done: done(f) }} onClick={() => setTab(i())}>
+                {f.title ?? `Question ${i() + 1}`}{done(f) ? ' ✓' : ''}
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+      <For each={shown()}>
+        {(f, i) => (
+          <Show when={i() === idx()}>
+            <FormFieldInput field={f} value={answer[f.key]} set={(v) => setAnswer(f.key, v)} />
+          </Show>
+        )}
+      </For>
+      <div class="actions">
+        <Show when={idx() > 0}><button onClick={() => setTab(idx() - 1)}>Back</button></Show>
+        <Show when={idx() < shown().length - 1} fallback={<button class="primary" disabled={missing()} onClick={submit}>Submit</button>}>
+          <button class="primary" onClick={() => setTab(idx() + 1)}>Next</button>
+        </Show>
+        <span class="spacer" />
+        <button onClick={() => send({ type: 'form', id: props.form.id, answer: null })}>Skip</button>
+      </div>
+    </div>
+  );
+}
+
+function FormFieldInput(props: { field: FormField; value: FormValue | undefined; set: (v: FormValue | undefined) => void }) {
+  const f = () => props.field;
+  const name = createUniqueId();
+  const options = () => f().options ?? [];
+  const picked = (v: string) => (Array.isArray(props.value) ? props.value.includes(v) : props.value === v);
+  const toggle = (v: string) => {
+    const cur = Array.isArray(props.value) ? props.value : [];
+    props.set(cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]);
+  };
+  const isOther = () => typeof props.value === 'string' && !options().some((o) => o.value === props.value);
+  return (
+    <div class="field">
+      <Show when={f().title}><div class="label">{f().title}{f().required ? ' *' : ''}</div></Show>
+      <Show when={f().description}><div class="muted">{f().description}</div></Show>
+      <Switch>
+        <Match when={f().type === 'external'}>
+          <a href={f().url}>{f().url}</a>
+        </Match>
+        <Match when={f().type === 'boolean'}>
+          <label class="opt"><input type="checkbox" checked={props.value === true} onChange={(e) => props.set(e.currentTarget.checked)} /><span>Yes</span></label>
+        </Match>
+        <Match when={f().type === 'multiselect' || (f().type === 'string' && options().length)}>
+          <For each={options()}>
+            {(o) => (
+              <label class="opt" classList={{ on: picked(o.value) }}>
+                <input
+                  type={f().type === 'multiselect' ? 'checkbox' : 'radio'}
+                  name={name}
+                  checked={picked(o.value)}
+                  onChange={() => (f().type === 'multiselect' ? toggle(o.value) : props.set(o.value))}
+                />
+                <span><span class="olabel">{o.label}</span><Show when={o.description}><span class="muted odesc">{o.description}</span></Show></span>
+              </label>
+            )}
+          </For>
+          <Show when={f().custom && f().type === 'string'}>
+            <input
+              class="text" placeholder="Other…" value={isOther() ? String(props.value) : ''}
+              onInput={(e) => props.set(e.currentTarget.value || undefined)}
+            />
+          </Show>
+        </Match>
+        <Match when={f().type === 'number' || f().type === 'integer'}>
+          <input class="text" type="number" step={f().type === 'integer' ? 1 : 'any'} value={props.value === undefined ? '' : String(props.value)}
+            onInput={(e) => props.set(e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value))} />
+        </Match>
+        <Match when={true}>
+          <input class="text" placeholder={f().placeholder} value={typeof props.value === 'string' ? props.value : ''}
+            onInput={(e) => props.set(e.currentTarget.value)} />
+        </Match>
+      </Switch>
     </div>
   );
 }

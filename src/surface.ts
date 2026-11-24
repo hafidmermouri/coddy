@@ -81,7 +81,7 @@ export class Surface {
     const tabs = [...this.tabs].map(([k, c]) => ({
       key: k,
       title: c.state.session.title ?? 'New session',
-      busy: c.state.session.busy || c.state.session.permissions.length > 0,
+      busy: c.state.session.busy || c.state.session.permissions.length > 0 || c.state.session.forms.length > 0,
     }));
     this.view.post({ type: 'state', state: { ...active, tabs, activeTab: this.active } });
   }
